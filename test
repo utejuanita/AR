@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Universal AR Viewer</title>
+
+<style>
+html,body{
+margin:0;
+width:100%;
+height:100%;
+overflow:hidden;
+background:#000;
+font-family:Arial,sans-serif;
+}
+
+#ui{
+position:absolute;
+top:10px;
+left:10px;
+z-index:1000;
+background:rgba(0,0,0,.7);
+padding:10px;
+border-radius:10px;
+color:white;
+}
+
+button{
+padding:8px 12px;
+margin:4px;
+cursor:pointer;
+}
+
+input[type=range]{
+width:180px;
+}
+
+canvas{
+display:block;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+
+<input type="file"
+       id="fileInput"
+       accept=".glb,.gltf">
+
+<br><br>
+
+<label>Skalierung</label><br>
+<input type="range"
+       id="scale"
+       min="0.1"
+       max="5"
+       step="0.1"
+       value="1">
+
+<br><br>
+
+<label>Rotation</label><br>
+<input type="range"
+       id="rotation"
+       min="0"
+       max="360"
+       value="0">
+
+<br><br>
+
+<button id="resetBtn">
+Reset
+</button>
+
+<button id="iosBtn">
+AR (iPhone)
+</button>
+
+</div>
+
+<script type="importmap">
+{
+ "imports": {
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+ }
+}
+</script>
+
+<script type="module">
+
+import * as THREE from "three";
+
+import { GLTFLoader }
+from "three/addons/loaders/GLTFLoader.js";
+
+import { ARButton }
+from "three/addons/webxr/ARButton.js";
+
+const scene = new THREE.Scene();
+
+const camera =
+new THREE.PerspectiveCamera(
+70,
+window.innerWidth/window.innerHeight,
+0.01,
+100
+);
+
+const renderer =
+new THREE.WebGLRenderer({
+antialias:true,
+alpha:true
+});
+
+renderer.setSize(
+window.innerWidth,
+window.innerHeight
+);
+
+renderer.xr.enabled = true;
+
+document.body.appendChild(
+renderer.domElement
+);
+
+const hemi =
+new THREE.HemisphereLight(
+0xffffff,
+0x444444,
+2
+);
+
+scene.add(hemi);
+
+const dir =
+new THREE.DirectionalLight(
+0xffffff,
+2
+);
+
+dir.position.set(3,5,2);
+scene.add(dir);
+
+let model=null;
+
+let reticle;
+
+let hitTestSource=null;
+let hitTestSourceRequested=false;
+
+const loader =
+new GLTFLoader();
+
+reticle =
+new THREE.Mesh(
+new THREE.RingGeometry(
+0.08,
+0.1,
+32
+).rotateX(-Math.PI/2),
+
+new THREE.MeshBasicMaterial({
+color:0x00ff00
+})
+);
+
+reticle.matrixAutoUpdate=false;
+reticle.visible=false;
+
+scene.add(reticle);
+
+function isIOS(){
+
+return /iPad|iPhone|iPod/.test(
+navigator.userAgent
+) ||
+(
+navigator.platform==="MacIntel" &&
+navigator.maxTouchPoints>1
+);
+
+}
+
+function isAndroidAR(){
+
+return navigator.xr;
+
+}
+
+if(isAndroidAR()){
+
+document.body.appendChild(
+ARButton.createButton(
+renderer,
+{
+requiredFeatures:["hit-test"]
+}
+)
+);
+
+}
+
+document
+.getElementById("fileInput")
+.addEventListener(
+"change",
+e=>{
+
+const file=e.target.files[0];
+
+if(!file) return;
+
+const url=
+URL.createObjectURL(file);
+
+loader.load(
+url,
+gltf=>{
+
+if(model){
+
+scene.remove(model);
+
+}
+
+model=gltf.scene;
+
+model.visible=false;
+
+scene.add(model);
+
+}
+);
+
+}
+);
+
+renderer.domElement.addEventListener(
+"click",
+()=>{
+
+if(
+!model ||
+!reticle.visible
+) return;
+
+model.visible=true;
+
+model.position.setFromMatrixPosition(
+reticle.matrix
+);
+
+model.quaternion.setFromRotationMatrix(
+reticle.matrix
+);
+
+}
+);
+
+document
+.getElementById("scale")
+.addEventListener(
+"input",
+e=>{
+
+if(!model) return;
+
+const s=
+parseFloat(
+e.target.value
+);
+
+model.scale.set(
+s,s,s
+);
+
+}
+);
+
+document
+.getElementById("rotation")
+.addEventListener(
+"input",
+e=>{
+
+if(!model) return;
+
+model.rotation.y=
+THREE.MathUtils.degToRad(
+e.target.value
+);
+
+}
+);
+
+document
+.getElementById("resetBtn")
+.addEventListener(
+"click",
+()=>{
+
+if(!model) return;
+
+model.position.set(
+0,0,0
+);
+
+model.rotation.set(
+0,0,0
+);
+
+model.scale.set(
+1,1,1
+);
+
+}
+);
+
+document
+.getElementById("iosBtn")
+.addEventListener(
+"click",
+()=>{
+
+if(!isIOS()){
+
+alert(
+"Nur für iPhone/iPad"
+);
+
+return;
+
+}
+
+window.location.href=
+"./model.usdz";
+
+}
+);
+
+renderer.setAnimationLoop(
+(timestamp,frame)=>{
+
+if(frame){
+
+const session=
+renderer.xr.getSession();
+
+const referenceSpace=
+renderer.xr.getReferenceSpace();
+
+if(
+!hitTestSourceRequested
+&& session
+){
+
+session
+.requestReferenceSpace(
+"viewer"
+)
+.then(viewerSpace=>{
+
+session
+.requestHitTestSource({
+space:viewerSpace
+})
+.then(source=>{
+
+hitTestSource=
+source;
+
+});
+
+});
+
+session
+.addEventListener(
+"end",
+()=>{
+
+hitTestSourceRequested=false;
+hitTestSource=null;
+
+}
+);
+
+hitTestSourceRequested=true;
+
+}
+
+if(hitTestSource){
+
+const hits=
+frame.getHitTestResults(
+hitTestSource
+);
+
+if(hits.length){
+
+const hit=
+hits[0];
+
+const pose=
+hit.getPose(
+referenceSpace
+);
+
+reticle.visible=true;
+
+reticle.matrix.fromArray(
+pose.transform.matrix
+);
+
+}else{
+
+reticle.visible=false;
+
+}
+
+}
+
+}
+
+renderer.render(
+scene,
+camera
+);
+
+}
+);
+
+window.addEventListener(
+"resize",
+()=>{
+
+camera.aspect=
+window.innerWidth/
+window.innerHeight;
+
+camera.updateProjectionMatrix();
+
+renderer.setSize(
+window.innerWidth,
+window.innerHeight
+);
+
+}
+);
+
+</script>
+
+</body>
+</html>

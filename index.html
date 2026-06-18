@@ -172,7 +172,7 @@ AR (iPhone)
       <button id="closeViewerBtn">Schließen</button>
     </div>
     <div id="viewerCanvasWrap">
-      <div id="viewerHint">Ziehen zum Drehen · Mausrad zum Zoomen</div>
+      <div id="viewerHint">Ziehen zum Drehen · Pinch zum Zoomen</div>
     </div>
   </div>
 </div>
@@ -208,6 +208,7 @@ window.innerWidth/window.innerHeight,
 0.01,
 100
 );
+camera.position.set(0, 1.6, 3);
 
 const renderer =
 new THREE.WebGLRenderer({
@@ -215,6 +216,7 @@ antialias:true,
 alpha:true
 });
 
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(
 window.innerWidth,
 window.innerHeight
@@ -246,6 +248,7 @@ scene.add(dir);
 
 let model=null;
 let screenModel=null;
+let currentObjectURL=null;
 
 let reticle;
 
@@ -259,6 +262,8 @@ const overlay = document.getElementById("viewerOverlay");
 const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
 const screenViewBtn = document.getElementById("screenViewBtn");
 const closeViewerBtn = document.getElementById("closeViewerBtn");
+const scaleInput = document.getElementById("scale");
+const rotationInput = document.getElementById("rotation");
 
 const viewerScene = new THREE.Scene();
 viewerScene.background = new THREE.Color(0x101010);
@@ -275,7 +280,7 @@ const viewerRenderer = new THREE.WebGLRenderer({
 antialias:true,
 alpha:true
 });
-viewerRenderer.setPixelRatio(window.devicePixelRatio);
+viewerRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 viewerCanvasWrap.appendChild(viewerRenderer.domElement);
 
 const controls = new OrbitControls(
@@ -283,6 +288,7 @@ viewerRenderer.domElement,
 viewerCamera
 );
 controls.enableDamping = true;
+controls.enablePan = false;
 controls.target.set(0, 0.5, 0);
 
 viewerScene.add(new THREE.AmbientLight(0xffffff, 1.8));
@@ -306,6 +312,15 @@ function updateViewerSize(){
   viewerRenderer.setSize(width, height, false);
 }
 
+function centerObjectAtGround(object){
+  const box = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const min = box.min.clone();
+  object.position.x -= center.x;
+  object.position.y -= min.y;
+  object.position.z -= center.z;
+}
+
 function fitCameraToObject(object){
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
@@ -313,16 +328,16 @@ function fitCameraToObject(object){
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
   const fov = viewerCamera.fov * (Math.PI / 180);
   let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-  cameraZ *= 1.8;
+  cameraZ *= 2.2;
 
-  viewerCamera.position.set(center.x, center.y + maxDim * 0.35, center.z + cameraZ);
+  viewerCamera.position.set(center.x, center.y + maxDim * 0.6, center.z + cameraZ);
   viewerCamera.near = Math.max(0.01, maxDim / 100);
   viewerCamera.far = Math.max(1000, maxDim * 20);
   viewerCamera.updateProjectionMatrix();
 
   controls.target.copy(center);
-  controls.minDistance = maxDim * 0.5;
-  controls.maxDistance = maxDim * 8;
+  controls.minDistance = Math.max(0.1, maxDim * 0.5);
+  controls.maxDistance = Math.max(2, maxDim * 8);
   controls.update();
 }
 
@@ -332,9 +347,8 @@ function syncScreenModelTransform(){
   screenModel.scale.copy(model.scale);
 }
 
-function showScreenModel(){
+function rebuildScreenModel(autoOpen=false){
   if(!model){
-    alert("Bitte zuerst ein 3D-Modell laden.");
     return;
   }
 
@@ -345,11 +359,25 @@ function showScreenModel(){
   screenModel = model.clone(true);
   screenModel.visible = true;
   screenModel.position.set(0,0,0);
+  screenModel.rotation.set(0,0,0);
+  centerObjectAtGround(screenModel);
   syncScreenModelTransform();
   viewerScene.add(screenModel);
   fitCameraToObject(screenModel);
   updateViewerSize();
-  overlay.classList.add("active");
+
+  if(autoOpen){
+    overlay.classList.add("active");
+  }
+}
+
+function showScreenModel(){
+  if(!model){
+    alert("Bitte zuerst ein 3D-Modell laden.");
+    return;
+  }
+
+  rebuildScreenModel(true);
 }
 
 function hideScreenModel(){
@@ -423,32 +451,33 @@ const file=e.target.files[0];
 
 if(!file) return;
 
+if(currentObjectURL){
+  URL.revokeObjectURL(currentObjectURL);
+}
+
 const url=
 URL.createObjectURL(file);
+currentObjectURL = url;
 
 loader.load(
 url,
 gltf=>{
 
 if(model){
-
 scene.remove(model);
-
 }
 
 model=gltf.scene;
-
 model.visible=false;
-
 scene.add(model);
 
-if(screenModel){
-  viewerScene.remove(screenModel);
-  screenModel = null;
-}
+rebuildScreenModel(true);
 
-URL.revokeObjectURL(url);
-
+},
+undefined,
+error=>{
+  console.error("Fehler beim Laden des 3D-Modells", error);
+  alert("Das 3D-Modell konnte nicht geladen werden.");
 }
 );
 
@@ -479,8 +508,7 @@ syncScreenModelTransform();
 }
 );
 
-document
-.getElementById("scale")
+scaleInput
 .addEventListener(
 "input",
 e=>{
@@ -497,12 +525,14 @@ s,s,s
 );
 
 syncScreenModelTransform();
+if(screenModel){
+  fitCameraToObject(screenModel);
+}
 
 }
 );
 
-document
-.getElementById("rotation")
+rotationInput
 .addEventListener(
 "input",
 e=>{
@@ -539,8 +569,8 @@ model.scale.set(
 1,1,1
 );
 
-document.getElementById("scale").value = 1;
-document.getElementById("rotation").value = 0;
+scaleInput.value = 1;
+rotationInput.value = 0;
 
 syncScreenModelTransform();
 if(screenModel){

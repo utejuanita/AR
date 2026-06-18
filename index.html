@@ -113,7 +113,8 @@ canvas{
 display:block;
 }
 
-#viewerOverlay{
+#viewerOverlay,
+#photoPreviewOverlay{
 position:absolute;
 inset:0;
 display:flex;
@@ -126,12 +127,14 @@ opacity:0;
 transition:opacity .25s ease;
 }
 
-#viewerOverlay.active{
+#viewerOverlay.active,
+#photoPreviewOverlay.active{
 opacity:1;
 pointer-events:auto;
 }
 
-#viewerCard{
+#viewerCard,
+#photoPreviewCard{
 width:min(94vw, 980px);
 height:min(84vh, 760px);
 background:rgba(17,17,17,.72);
@@ -144,29 +147,35 @@ flex-direction:column;
 backdrop-filter:blur(10px);
 }
 
-#viewerHeader{
+#viewerHeader,
+#photoPreviewHeader{
 display:flex;
 align-items:center;
 justify-content:space-between;
 padding:12px 16px;
 background:rgba(255,255,255,.05);
 color:#fff;
+gap:12px;
 }
 
-#viewerHeader h2{
+#viewerHeader h2,
+#photoPreviewHeader h2{
 margin:0;
 font-size:16px;
 font-weight:600;
 }
 
-#closeViewerBtn{
+#closeViewerBtn,
+#savePhotoBtn,
+#closePhotoPreviewBtn{
 background:#00f0f0;
 color:#000000;
 border:none;
 border-radius:8px;
 }
 
-#viewerCanvasWrap{
+#viewerCanvasWrap,
+#photoPreviewBody{
 position:relative;
 flex:1;
 min-height:320px;
@@ -176,6 +185,23 @@ min-height:320px;
 width:100%;
 height:100%;
 display:block;
+}
+
+#photoPreviewBody{
+display:flex;
+align-items:center;
+justify-content:center;
+padding:12px;
+box-sizing:border-box;
+background:rgba(0,0,0,.35);
+}
+
+#photoPreviewImage{
+max-width:100%;
+max-height:100%;
+border-radius:12px;
+object-fit:contain;
+box-shadow:0 12px 30px rgba(0,0,0,.35);
 }
 
 #viewerHint,
@@ -253,6 +279,10 @@ opacity:1;
     font-size:13px;
   }
 
+  #photoPreviewHeader{
+    flex-wrap:wrap;
+  }
+
   input[type=range]{
     width:140px;
   }
@@ -282,7 +312,7 @@ opacity:1;
     </button>
 
     <button id="surfaceAnchorBtn">
-    Oberfläche verankern
+    Auf Marker platzieren
     </button>
 
     <br><br>
@@ -314,7 +344,7 @@ opacity:1;
 
 <button id="photoBtnFloating">Foto erstellen</button>
 
-<div id="arStatus">Lade ein Modell und starte dann die Oberflächenverankerung.</div>
+<div id="arStatus">Lade ein Modell und lege dann ein weißes Quadrat als Marker auf den Boden.</div>
 <div id="photoStatus">Foto gespeichert</div>
 
 <div id="viewerOverlay">
@@ -326,6 +356,21 @@ opacity:1;
     <div id="viewerCanvasWrap">
       <div id="statusBox">Warte auf Modell …</div>
       <div id="viewerHint">Ziehen zum Drehen · Pinch zum Zoomen</div>
+    </div>
+  </div>
+</div>
+
+<div id="photoPreviewOverlay">
+  <div id="photoPreviewCard">
+    <div id="photoPreviewHeader">
+      <h2>Foto-Vorschau</h2>
+      <div>
+        <button id="savePhotoBtn">In Downloads sichern</button>
+        <button id="closePhotoPreviewBtn">Schließen</button>
+      </div>
+    </div>
+    <div id="photoPreviewBody">
+      <img id="photoPreviewImage" alt="Foto Vorschau">
     </div>
   </div>
 </div>
@@ -343,7 +388,6 @@ opacity:1;
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { ARButton } from "three/addons/webxr/ARButton.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const scene = new THREE.Scene();
@@ -364,7 +408,6 @@ preserveDrawingBuffer:true
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.xr.enabled = true;
 renderer.domElement.id = "xrCanvas";
 document.body.appendChild(renderer.domElement);
 
@@ -376,17 +419,16 @@ scene.add(dir);
 let model = null;
 let screenModel = null;
 let currentObjectURL = null;
-let reticle;
-let hitTestSource = null;
-let hitTestSourceRequested = false;
 let mixedModeActive = false;
 let cameraStream = null;
-let surfaceAnchorMode = false;
 let surfacePlaced = false;
-let lastSurfaceMatrix = null;
 let photoStatusTimer = null;
-const surfacePoints = [];
-const SURFACE_POINT_LIMIT = 120;
+let latestPhotoDataURL = null;
+let markerTrackingActive = false;
+let markerLostFrames = 0;
+let markerLocked = false;
+let lastDetectedMarker = null;
+const MARKER_LOST_LIMIT = 18;
 
 const loader = new GLTFLoader();
 
@@ -405,6 +447,10 @@ const ui = document.getElementById("ui");
 const toggleUiBtn = document.getElementById("toggleUiBtn");
 const arStatus = document.getElementById("arStatus");
 const photoStatus = document.getElementById("photoStatus");
+const photoPreviewOverlay = document.getElementById("photoPreviewOverlay");
+const photoPreviewImage = document.getElementById("photoPreviewImage");
+const savePhotoBtn = document.getElementById("savePhotoBtn");
+const closePhotoPreviewBtn = document.getElementById("closePhotoPreviewBtn");
 
 const viewerScene = new THREE.Scene();
 viewerScene.background = null;
@@ -438,20 +484,29 @@ const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
 viewerGrid.position.y = -0.001;
 viewerScene.add(viewerGrid);
 
-const scanGroup = new THREE.Group();
-scanGroup.name = "surfaceScanGroup";
-scene.add(scanGroup);
+const markerPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.5, 0.5),
+  new THREE.MeshBasicMaterial({
+    color:0xffffff,
+    transparent:true,
+    opacity:0.92,
+    side:THREE.DoubleSide
+  })
+);
+markerPlane.rotation.x = -Math.PI / 2;
+markerPlane.visible = false;
+scene.add(markerPlane);
 
-const scanMaterial = new THREE.MeshBasicMaterial({
-  color:0x00d8ff,
-  transparent:true,
-  opacity:0.35,
-  side:THREE.DoubleSide
-});
+const markerFrame = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.PlaneGeometry(0.5, 0.5)),
+  new THREE.LineBasicMaterial({ color:0x111111 })
+);
+markerFrame.rotation.x = -Math.PI / 2;
+markerFrame.visible = false;
+scene.add(markerFrame);
 
-const scanPointMaterial = new THREE.MeshBasicMaterial({
-  color:0x00ff88
-});
+const captureCanvas = document.createElement("canvas");
+const captureCtx = captureCanvas.getContext("2d", { willReadFrequently:true });
 
 function setStatus(message){
   statusBox.textContent = message;
@@ -636,80 +691,129 @@ function clearPlacedSurfaceModel(){
   if(existing){
     scene.remove(existing);
   }
+  surfacePlaced = false;
+  markerLocked = false;
 }
 
-function clearSurfaceScan(){
-  while(scanGroup.children.length){
-    const child = scanGroup.children.pop();
-    if(child.geometry) child.geometry.dispose();
-    if(child.material) child.material.dispose?.();
+function updateMarkerVisual(marker){
+  markerPlane.visible = true;
+  markerFrame.visible = true;
+
+  markerPlane.position.copy(marker.center);
+  markerFrame.position.copy(marker.center);
+
+  markerPlane.scale.set(marker.size, marker.size, 1);
+  markerFrame.scale.set(marker.size, marker.size, 1);
+
+  markerPlane.rotation.set(-Math.PI / 2, 0, 0);
+  markerFrame.rotation.set(-Math.PI / 2, 0, 0);
+}
+
+function hideMarkerVisual(){
+  markerPlane.visible = false;
+  markerFrame.visible = false;
+}
+
+function estimateMarkerFromFrame(){
+  if(!cameraFeed.videoWidth || !cameraFeed.videoHeight){
+    return null;
   }
-  surfacePoints.length = 0;
-  lastSurfaceMatrix = null;
+
+  const sampleWidth = 160;
+  const sampleHeight = Math.max(90, Math.round(sampleWidth * cameraFeed.videoHeight / cameraFeed.videoWidth));
+  captureCanvas.width = sampleWidth;
+  captureCanvas.height = sampleHeight;
+  captureCtx.drawImage(cameraFeed, 0, 0, sampleWidth, sampleHeight);
+
+  const imageData = captureCtx.getImageData(0, 0, sampleWidth, sampleHeight).data;
+  let minX = sampleWidth;
+  let minY = sampleHeight;
+  let maxX = -1;
+  let maxY = -1;
+  let whiteCount = 0;
+
+  for(let y = Math.floor(sampleHeight * 0.32); y < sampleHeight; y++){
+    for(let x = 0; x < sampleWidth; x++){
+      const index = (y * sampleWidth + x) * 4;
+      const r = imageData[index];
+      const g = imageData[index + 1];
+      const b = imageData[index + 2];
+      const brightness = (r + g + b) / 3;
+      const spread = Math.max(r, g, b) - Math.min(r, g, b);
+      if(brightness > 225 && spread < 25){
+        whiteCount++;
+        if(x < minX) minX = x;
+        if(y < minY) minY = y;
+        if(x > maxX) maxX = x;
+        if(y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if(whiteCount < 450 || maxX <= minX || maxY <= minY){
+    return null;
+  }
+
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const ratio = width / height;
+  if(ratio < 0.65 || ratio > 1.45){
+    return null;
+  }
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const normalizedX = (centerX / sampleWidth) * 2 - 1;
+  const normalizedY = -((centerY / sampleHeight) * 2 - 1);
+  const view = new THREE.Vector3(normalizedX, normalizedY, 0.55).unproject(camera);
+  const direction = view.sub(camera.position).normalize();
+  const planeY = -1.15;
+  const t = (planeY - camera.position.y) / direction.y;
+
+  if(!isFinite(t) || t <= 0){
+    return null;
+  }
+
+  const center = camera.position.clone().add(direction.multiplyScalar(t));
+  const size = THREE.MathUtils.clamp((width / sampleWidth) * 2.4, 0.22, 1.2);
+
+  return { center, size };
 }
 
-function addSurfaceSampleFromMatrix(matrix){
-  const pos = new THREE.Vector3().setFromMatrixPosition(matrix);
-
-  const last = surfacePoints[surfacePoints.length - 1];
-  if(last && last.distanceTo(pos) < 0.03){
+function placeModelOnMarker(marker){
+  if(!model || !marker){
+    setARStatus("Kein weißer Marker erkannt. Lege ein weißes Quadrat flach auf den Boden.");
     return;
   }
 
-  surfacePoints.push(pos.clone());
-  if(surfacePoints.length > SURFACE_POINT_LIMIT){
-    surfacePoints.shift();
+  const existing = scene.getObjectByName("surfaceAnchoredModel");
+  let anchoredModel = existing;
+
+  if(!anchoredModel){
+    anchoredModel = model.clone(true);
+    anchoredModel.name = "surfaceAnchoredModel";
+    anchoredModel.visible = true;
+    anchoredModel.position.set(0,0,0);
+    anchoredModel.rotation.set(0,0,0);
+    anchoredModel.scale.set(1,1,1);
+
+    ensureVisibleMaterials(anchoredModel);
+    centerObjectAtGround(anchoredModel);
+    normalizeObjectSize(anchoredModel);
+    centerObjectAtGround(anchoredModel);
+    scene.add(anchoredModel);
   }
-
-  const marker = new THREE.Mesh(
-    new THREE.CircleGeometry(0.018, 20).rotateX(-Math.PI / 2),
-    scanPointMaterial.clone()
-  );
-  marker.position.copy(pos);
-  scanGroup.add(marker);
-
-  if(surfacePoints.length >= 3){
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.09, 0.13, 40).rotateX(-Math.PI / 2),
-      scanMaterial.clone()
-    );
-    ring.position.copy(pos);
-    scanGroup.add(ring);
-  }
-}
-
-function placeModelOnDetectedSurface(){
-  if(!model || !reticle.visible){
-    setARStatus("Noch keine Oberfläche erkannt. Bewege die Kamera langsam über Boden oder Tisch.");
-    return;
-  }
-
-  clearPlacedSurfaceModel();
-
-  const anchoredModel = model.clone(true);
-  anchoredModel.name = "surfaceAnchoredModel";
-  anchoredModel.visible = true;
-  anchoredModel.position.set(0,0,0);
-  anchoredModel.rotation.set(0,0,0);
-  anchoredModel.scale.set(1,1,1);
-
-  ensureVisibleMaterials(anchoredModel);
-  centerObjectAtGround(anchoredModel);
-  normalizeObjectSize(anchoredModel);
-  centerObjectAtGround(anchoredModel);
 
   const sliderScale = parseFloat(scaleInput.value || "1");
-  anchoredModel.scale.multiplyScalar(sliderScale);
-  anchoredModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0);
+  anchoredModel.scale.setScalar(sliderScale * 0.7);
+  anchoredModel.position.copy(marker.center);
+  anchoredModel.position.y += 0.01;
+  anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0), 0);
 
-  anchoredModel.position.setFromMatrixPosition(reticle.matrix);
-  anchoredModel.quaternion.setFromRotationMatrix(reticle.matrix);
-  anchoredModel.translateY(0.001);
-
-  scene.add(anchoredModel);
   surfacePlaced = true;
-  surfaceAnchorMode = false;
-  setARStatus("Oberfläche gescannt und Modell verankert. Du kannst jetzt mit der Kamera um das Objekt gehen.");
+  markerLocked = true;
+  lastDetectedMarker = marker;
+  setARStatus("Weißes Quadrat erkannt. Modell ist darauf fix verankert. Du kannst jetzt um das Objekt herumgehen.");
 }
 
 function rebuildMixedModel(){
@@ -748,7 +852,7 @@ function showScreenModel(){
   }
 
   mixedModeActive = false;
-  surfaceAnchorMode = false;
+  markerTrackingActive = false;
   rebuildScreenModel(true);
 }
 
@@ -764,11 +868,12 @@ async function showMixedView(){
   }
 
   mixedModeActive = true;
-  surfaceAnchorMode = false;
+  markerTrackingActive = false;
   overlay.classList.remove("active");
   if(!surfacePlaced){
     rebuildMixedModel();
   }
+  hideMarkerVisual();
   setARStatus("Kamerabild mit 3D-Modell aktiv");
 }
 
@@ -784,22 +889,27 @@ async function startSurfaceAnchorMode(){
   }
 
   mixedModeActive = false;
-  surfacePlaced = false;
-  surfaceAnchorMode = true;
+  markerTrackingActive = true;
+  markerLocked = false;
+  markerLostFrames = 0;
+  lastDetectedMarker = null;
   overlay.classList.remove("active");
   clearPlacedSurfaceModel();
-  clearSurfaceScan();
 
   const existingMixed = scene.getObjectByName("mixedModelRoot");
   if(existingMixed){
     scene.remove(existingMixed);
   }
 
-  setARStatus("Scanne Oberfläche … Bewege die Kamera langsam. Die erkannten Flächen werden markiert. Tippe dann ins Bild, um das Modell zu verankern.");
+  setARStatus("Lege ein weißes Quadrat flach auf den Boden. Sobald es erkannt wird, wird das Modell darauf platziert und fixiert.");
 }
 
 function hideScreenModel(){
   overlay.classList.remove("active");
+}
+
+function closePhotoPreview(){
+  photoPreviewOverlay.classList.remove("active");
 }
 
 function downloadDataURL(dataURL, filename){
@@ -817,19 +927,24 @@ function buildPhotoFilename(){
   return `ar-foto-${stamp}.png`;
 }
 
+function openPhotoPreview(dataURL){
+  latestPhotoDataURL = dataURL;
+  photoPreviewImage.src = dataURL;
+  photoPreviewOverlay.classList.add("active");
+}
+
 function capturePhoto(){
   const isViewerOpen = overlay.classList.contains("active");
 
   if(isViewerOpen){
     updateViewerSize();
     const dataURL = viewerRenderer.domElement.toDataURL("image/png");
-    downloadDataURL(dataURL, buildPhotoFilename());
-    showPhotoStatus("3D-Foto gespeichert");
+    openPhotoPreview(dataURL);
     return;
   }
 
-  if(!mixedModeActive && !surfacePlaced && !surfaceAnchorMode){
-    alert("Starte zuerst 'Kamera + 3D', 'Oberfläche verankern' oder öffne die 3D Ansicht.");
+  if(!mixedModeActive && !surfacePlaced && !markerTrackingActive){
+    alert("Starte zuerst 'Kamera + 3D', 'Auf Marker platzieren' oder öffne die 3D Ansicht.");
     return;
   }
 
@@ -851,44 +966,40 @@ function capturePhoto(){
     ctx.drawImage(renderer.domElement, 0, 0, width, height);
 
     const dataURL = photoCanvas.toDataURL("image/png");
-    downloadDataURL(dataURL, buildPhotoFilename());
-    showPhotoStatus("AR-Foto gespeichert");
+    openPhotoPreview(dataURL);
   }catch(error){
     console.error("Foto konnte nicht erstellt werden", error);
     alert("Das Foto konnte nicht erstellt werden.");
   }
 }
 
+function savePreviewPhoto(){
+  if(!latestPhotoDataURL){
+    alert("Es ist noch kein Foto zur Vorschau vorhanden.");
+    return;
+  }
+
+  downloadDataURL(latestPhotoDataURL, buildPhotoFilename());
+  showPhotoStatus("Foto in Downloads gesichert");
+}
+
 screenViewBtn.addEventListener("click", showScreenModel);
 mixedViewBtn.addEventListener("click", showMixedView);
 surfaceAnchorBtn.addEventListener("click", startSurfaceAnchorMode);
 photoBtnFloating.addEventListener("click", capturePhoto);
+savePhotoBtn.addEventListener("click", savePreviewPhoto);
+closePhotoPreviewBtn.addEventListener("click", closePhotoPreview);
 closeViewerBtn.addEventListener("click", hideScreenModel);
 overlay.addEventListener("click", e=>{
   if(e.target === overlay){
     hideScreenModel();
   }
 });
-
-reticle = new THREE.Mesh(
-  new THREE.RingGeometry(0.08, 0.1, 32).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color:0x00ff00 })
-);
-reticle.matrixAutoUpdate = false;
-reticle.visible = false;
-scene.add(reticle);
-
-function isAndroidAR(){
-  return navigator.xr;
-}
-
-if(isAndroidAR()){
-  document.body.appendChild(
-    ARButton.createButton(renderer, {
-      requiredFeatures:["hit-test"]
-    })
-  );
-}
+photoPreviewOverlay.addEventListener("click", e=>{
+  if(e.target === photoPreviewOverlay){
+    closePhotoPreview();
+  }
+});
 
 document.getElementById("fileInput").addEventListener("change", e=>{
   const file = e.target.files[0];
@@ -896,7 +1007,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
 
   setStatus(`Lade ${file.name} …`);
   overlay.classList.add("active");
-  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder Oberflächenverankerung.");
+  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder lege ein weißes Quadrat auf den Boden.");
 
   if(currentObjectURL){
     URL.revokeObjectURL(currentObjectURL);
@@ -913,7 +1024,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
       }
 
       clearPlacedSurfaceModel();
-      clearSurfaceScan();
+      hideMarkerVisual();
 
       const oldMixed = scene.getObjectByName("mixedModelRoot");
       if(oldMixed){
@@ -924,7 +1035,6 @@ document.getElementById("fileInput").addEventListener("change", e=>{
       model.visible = false;
       scene.add(model);
 
-      surfacePlaced = false;
       rebuildScreenModel(true);
       if(mixedModeActive){
         rebuildMixedModel();
@@ -938,24 +1048,6 @@ document.getElementById("fileInput").addEventListener("change", e=>{
       alert("Das 3D-Modell konnte nicht geladen werden.");
     }
   );
-});
-
-renderer.domElement.addEventListener("click", ()=>{
-  if(surfaceAnchorMode){
-    placeModelOnDetectedSurface();
-    return;
-  }
-
-  if(mixedModeActive){
-    return;
-  }
-
-  if(!model || !reticle.visible) return;
-
-  model.visible = true;
-  model.position.setFromMatrixPosition(reticle.matrix);
-  model.quaternion.setFromRotationMatrix(reticle.matrix);
-  syncScreenModelTransform();
 });
 
 scaleInput.addEventListener("input", e=>{
@@ -972,11 +1064,8 @@ scaleInput.addEventListener("input", e=>{
     rebuildMixedModel();
   }
 
-  if(surfacePlaced && lastSurfaceMatrix){
-    clearPlacedSurfaceModel();
-    reticle.matrix.copy(lastSurfaceMatrix);
-    reticle.visible = true;
-    placeModelOnDetectedSurface();
+  if(surfacePlaced && lastDetectedMarker){
+    placeModelOnMarker(lastDetectedMarker);
   }
 });
 
@@ -990,11 +1079,8 @@ rotationInput.addEventListener("input", e=>{
     rebuildMixedModel();
   }
 
-  if(surfacePlaced){
-    const anchored = scene.getObjectByName("surfaceAnchoredModel");
-    if(anchored){
-      anchored.rotation.y = THREE.MathUtils.degToRad(e.target.value);
-    }
+  if(surfacePlaced && lastDetectedMarker){
+    placeModelOnMarker(lastDetectedMarker);
   }
 });
 
@@ -1009,9 +1095,10 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   rotationInput.value = 0;
 
   clearPlacedSurfaceModel();
-  clearSurfaceScan();
-  surfacePlaced = false;
-  surfaceAnchorMode = false;
+  hideMarkerVisual();
+  markerTrackingActive = false;
+  markerLocked = false;
+  lastDetectedMarker = null;
 
   if(screenModel){
     rebuildScreenModel(overlay.classList.contains("active"));
@@ -1021,66 +1108,30 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
     rebuildMixedModel();
   }
 
-  setARStatus("Zurückgesetzt. Du kannst die Oberflächenverankerung neu starten.");
+  setARStatus("Zurückgesetzt. Du kannst die Marker-Platzierung neu starten.");
 });
 
-renderer.setAnimationLoop((timestamp, frame)=>{
-  let hasSurface = false;
+function renderMarkerTracking(){
+  if(markerTrackingActive && !markerLocked){
+    const detectedMarker = estimateMarkerFromFrame();
 
-  if(frame){
-    const session = renderer.xr.getSession();
-    const referenceSpace = renderer.xr.getReferenceSpace();
-
-    if(!hitTestSourceRequested && session){
-      session.requestReferenceSpace("viewer").then(viewerSpace=>{
-        session.requestHitTestSource({ space:viewerSpace }).then(source=>{
-          hitTestSource = source;
-        });
-      });
-
-      session.addEventListener("end", ()=>{
-        hitTestSourceRequested = false;
-        hitTestSource = null;
-        reticle.visible = false;
-        surfaceAnchorMode = false;
-        clearSurfaceScan();
-        setARStatus("AR-Sitzung beendet.");
-      });
-
-      hitTestSourceRequested = true;
-    }
-
-    if(hitTestSource){
-      const hits = frame.getHitTestResults(hitTestSource);
-
-      if(hits.length){
-        const hit = hits[0];
-        const pose = hit.getPose(referenceSpace);
-        reticle.visible = true;
-        reticle.matrix.fromArray(pose.transform.matrix);
-        hasSurface = true;
-        lastSurfaceMatrix = reticle.matrix.clone();
-
-        if(surfaceAnchorMode && !surfacePlaced){
-          addSurfaceSampleFromMatrix(reticle.matrix);
-          setARStatus("Oberfläche erkannt und markiert. Tippe jetzt ins Bild, um das Modell dort zu verankern.");
-        }
-      }else{
-        reticle.visible = false;
-
-        if(surfaceAnchorMode && !surfacePlaced){
-          setARStatus("Scanne Oberfläche … Bewege die Kamera langsam über Boden oder Tisch.");
-        }
+    if(detectedMarker){
+      markerLostFrames = 0;
+      lastDetectedMarker = detectedMarker;
+      updateMarkerVisual(detectedMarker);
+      setARStatus("Weißes Quadrat erkannt. Modell wird darauf platziert.");
+      placeModelOnMarker(detectedMarker);
+    }else{
+      markerLostFrames++;
+      if(markerLostFrames > MARKER_LOST_LIMIT){
+        hideMarkerVisual();
+        setARStatus("Kein weißes Quadrat erkannt. Lege den Marker flach und gut sichtbar auf den Boden.");
       }
     }
   }
 
-  if(!surfaceAnchorMode || surfacePlaced || !hasSurface){
-    reticle.visible = false;
-  }
-
   renderer.render(scene, camera);
-});
+}
 
 function animateViewer(){
   requestAnimationFrame(animateViewer);
@@ -1088,6 +1139,12 @@ function animateViewer(){
   viewerRenderer.render(viewerScene, viewerCamera);
 }
 animateViewer();
+
+function animateScene(){
+  requestAnimationFrame(animateScene);
+  renderMarkerTracking();
+}
+animateScene();
 
 window.addEventListener("resize", ()=>{
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -1098,7 +1155,7 @@ window.addEventListener("resize", ()=>{
 
 updateViewerSize();
 setStatus("Warte auf Modell …");
-setARStatus("Lade ein Modell und starte dann die Oberflächenverankerung.");
+setARStatus("Lade ein Modell und lege dann ein weißes Quadrat als Marker auf den Boden.");
 
 </script>
 

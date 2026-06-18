@@ -344,7 +344,7 @@ opacity:1;
 
 <button id="photoBtnFloating">Foto erstellen</button>
 
-<div id="arStatus">Lade ein Modell und lege dann ein weißes Quadrat als Marker auf den Boden.</div>
+<div id="arStatus">Lade ein Modell und halte dann einen Marker mit schwarzem Rand und weißer Mitte auf den Boden.</div>
 <div id="photoStatus">Foto gespeichert</div>
 
 <div id="viewerOverlay">
@@ -429,6 +429,8 @@ let markerLostFrames = 0;
 let markerLocked = false;
 let lastDetectedMarker = null;
 const MARKER_LOST_LIMIT = 18;
+const MARKER_STABLE_FRAMES = 5;
+let stableMarkerFrames = 0;
 
 const loader = new GLTFLoader();
 
@@ -484,8 +486,24 @@ const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
 viewerGrid.position.y = -0.001;
 viewerScene.add(viewerGrid);
 
-const markerPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.5, 0.5),
+const markerFrameGroup = new THREE.Group();
+markerFrameGroup.visible = false;
+scene.add(markerFrameGroup);
+
+const markerBase = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({
+    color:0x111111,
+    transparent:true,
+    opacity:0.28,
+    side:THREE.DoubleSide
+  })
+);
+markerBase.rotation.x = -Math.PI / 2;
+markerFrameGroup.add(markerBase);
+
+const markerInner = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.62, 0.62),
   new THREE.MeshBasicMaterial({
     color:0xffffff,
     transparent:true,
@@ -493,17 +511,16 @@ const markerPlane = new THREE.Mesh(
     side:THREE.DoubleSide
   })
 );
-markerPlane.rotation.x = -Math.PI / 2;
-markerPlane.visible = false;
-scene.add(markerPlane);
+markerInner.position.y = 0.002;
+markerInner.rotation.x = -Math.PI / 2;
+markerFrameGroup.add(markerInner);
 
-const markerFrame = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.PlaneGeometry(0.5, 0.5)),
-  new THREE.LineBasicMaterial({ color:0x111111 })
+const markerEdge = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+  new THREE.LineBasicMaterial({ color:0xffffff })
 );
-markerFrame.rotation.x = -Math.PI / 2;
-markerFrame.visible = false;
-scene.add(markerFrame);
+markerEdge.rotation.x = -Math.PI / 2;
+markerFrameGroup.add(markerEdge);
 
 const captureCanvas = document.createElement("canvas");
 const captureCtx = captureCanvas.getContext("2d", { willReadFrequently:true });
@@ -696,22 +713,14 @@ function clearPlacedSurfaceModel(){
 }
 
 function updateMarkerVisual(marker){
-  markerPlane.visible = true;
-  markerFrame.visible = true;
-
-  markerPlane.position.copy(marker.center);
-  markerFrame.position.copy(marker.center);
-
-  markerPlane.scale.set(marker.size, marker.size, 1);
-  markerFrame.scale.set(marker.size, marker.size, 1);
-
-  markerPlane.rotation.set(-Math.PI / 2, 0, 0);
-  markerFrame.rotation.set(-Math.PI / 2, 0, 0);
+  markerFrameGroup.visible = true;
+  markerFrameGroup.position.copy(marker.center);
+  markerFrameGroup.scale.set(marker.size, marker.size, marker.size);
+  markerFrameGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0);
 }
 
 function hideMarkerVisual(){
-  markerPlane.visible = false;
-  markerFrame.visible = false;
+  markerFrameGroup.visible = false;
 }
 
 function estimateMarkerFromFrame(){
@@ -719,8 +728,8 @@ function estimateMarkerFromFrame(){
     return null;
   }
 
-  const sampleWidth = 160;
-  const sampleHeight = Math.max(90, Math.round(sampleWidth * cameraFeed.videoHeight / cameraFeed.videoWidth));
+  const sampleWidth = 180;
+  const sampleHeight = Math.max(110, Math.round(sampleWidth * cameraFeed.videoHeight / cameraFeed.videoWidth));
   captureCanvas.width = sampleWidth;
   captureCanvas.height = sampleHeight;
   captureCtx.drawImage(cameraFeed, 0, 0, sampleWidth, sampleHeight);
@@ -731,8 +740,10 @@ function estimateMarkerFromFrame(){
   let maxX = -1;
   let maxY = -1;
   let whiteCount = 0;
+  let borderDarkCount = 0;
+  let borderSampleCount = 0;
 
-  for(let y = Math.floor(sampleHeight * 0.32); y < sampleHeight; y++){
+  for(let y = Math.floor(sampleHeight * 0.28); y < sampleHeight; y++){
     for(let x = 0; x < sampleWidth; x++){
       const index = (y * sampleWidth + x) * 4;
       const r = imageData[index];
@@ -740,7 +751,7 @@ function estimateMarkerFromFrame(){
       const b = imageData[index + 2];
       const brightness = (r + g + b) / 3;
       const spread = Math.max(r, g, b) - Math.min(r, g, b);
-      if(brightness > 225 && spread < 25){
+      if(brightness > 210 && spread < 35){
         whiteCount++;
         if(x < minX) minX = x;
         if(y < minY) minY = y;
@@ -750,14 +761,40 @@ function estimateMarkerFromFrame(){
     }
   }
 
-  if(whiteCount < 450 || maxX <= minX || maxY <= minY){
+  if(whiteCount < 380 || maxX <= minX || maxY <= minY){
     return null;
   }
 
   const width = maxX - minX;
   const height = maxY - minY;
   const ratio = width / height;
-  if(ratio < 0.65 || ratio > 1.45){
+  if(ratio < 0.6 || ratio > 1.55){
+    return null;
+  }
+
+  const borderPadding = Math.max(4, Math.round(Math.min(width, height) * 0.18));
+  const outerMinX = Math.max(0, minX - borderPadding);
+  const outerMinY = Math.max(0, minY - borderPadding);
+  const outerMaxX = Math.min(sampleWidth - 1, maxX + borderPadding);
+  const outerMaxY = Math.min(sampleHeight - 1, maxY + borderPadding);
+
+  for(let y = outerMinY; y <= outerMaxY; y++){
+    for(let x = outerMinX; x <= outerMaxX; x++){
+      const insideInner = x >= minX && x <= maxX && y >= minY && y <= maxY;
+      if(insideInner) continue;
+      const index = (y * sampleWidth + x) * 4;
+      const r = imageData[index];
+      const g = imageData[index + 1];
+      const b = imageData[index + 2];
+      const brightness = (r + g + b) / 3;
+      borderSampleCount++;
+      if(brightness < 90){
+        borderDarkCount++;
+      }
+    }
+  }
+
+  if(borderSampleCount < 200 || borderDarkCount / borderSampleCount < 0.45){
     return null;
   }
 
@@ -775,14 +812,15 @@ function estimateMarkerFromFrame(){
   }
 
   const center = camera.position.clone().add(direction.multiplyScalar(t));
-  const size = THREE.MathUtils.clamp((width / sampleWidth) * 2.4, 0.22, 1.2);
+  const size = THREE.MathUtils.clamp((Math.max(width, height) / sampleWidth) * 2.6, 0.22, 1.4);
+  const angle = ((centerX / sampleWidth) - 0.5) * 0.35;
 
-  return { center, size };
+  return { center, size, angle };
 }
 
 function placeModelOnMarker(marker){
   if(!model || !marker){
-    setARStatus("Kein weißer Marker erkannt. Lege ein weißes Quadrat flach auf den Boden.");
+    setARStatus("Kein Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte.");
     return;
   }
 
@@ -808,12 +846,12 @@ function placeModelOnMarker(marker){
   anchoredModel.scale.setScalar(sliderScale * 0.7);
   anchoredModel.position.copy(marker.center);
   anchoredModel.position.y += 0.01;
-  anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0), 0);
+  anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
 
   surfacePlaced = true;
   markerLocked = true;
   lastDetectedMarker = marker;
-  setARStatus("Weißes Quadrat erkannt. Modell ist darauf fix verankert. Du kannst jetzt um das Objekt herumgehen.");
+  setARStatus("Marker erkannt. Das Modell ist jetzt auf dem Marker fixiert.");
 }
 
 function rebuildMixedModel(){
@@ -892,6 +930,7 @@ async function startSurfaceAnchorMode(){
   markerTrackingActive = true;
   markerLocked = false;
   markerLostFrames = 0;
+  stableMarkerFrames = 0;
   lastDetectedMarker = null;
   overlay.classList.remove("active");
   clearPlacedSurfaceModel();
@@ -901,7 +940,7 @@ async function startSurfaceAnchorMode(){
     scene.remove(existingMixed);
   }
 
-  setARStatus("Lege ein weißes Quadrat flach auf den Boden. Sobald es erkannt wird, wird das Modell darauf platziert und fixiert.");
+  setARStatus("Halte den Marker mit schwarzem Rand und weißer Mitte flach auf den Boden. Das Modell wird nach stabiler Erkennung platziert.");
 }
 
 function hideScreenModel(){
@@ -1007,7 +1046,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
 
   setStatus(`Lade ${file.name} …`);
   overlay.classList.add("active");
-  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder lege ein weißes Quadrat auf den Boden.");
+  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder nutze den Marker mit schwarzem Rand.");
 
   if(currentObjectURL){
     URL.revokeObjectURL(currentObjectURL);
@@ -1099,6 +1138,7 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   markerTrackingActive = false;
   markerLocked = false;
   lastDetectedMarker = null;
+  stableMarkerFrames = 0;
 
   if(screenModel){
     rebuildScreenModel(overlay.classList.contains("active"));
@@ -1117,15 +1157,22 @@ function renderMarkerTracking(){
 
     if(detectedMarker){
       markerLostFrames = 0;
+      stableMarkerFrames++;
       lastDetectedMarker = detectedMarker;
       updateMarkerVisual(detectedMarker);
-      setARStatus("Weißes Quadrat erkannt. Modell wird darauf platziert.");
-      placeModelOnMarker(detectedMarker);
+
+      if(stableMarkerFrames >= MARKER_STABLE_FRAMES){
+        setARStatus("Marker stabil erkannt. Modell wird jetzt auf dem Marker fixiert.");
+        placeModelOnMarker(detectedMarker);
+      }else{
+        setARStatus(`Marker erkannt. Halte ruhig … ${stableMarkerFrames}/${MARKER_STABLE_FRAMES}`);
+      }
     }else{
       markerLostFrames++;
+      stableMarkerFrames = 0;
       if(markerLostFrames > MARKER_LOST_LIMIT){
         hideMarkerVisual();
-        setARStatus("Kein weißes Quadrat erkannt. Lege den Marker flach und gut sichtbar auf den Boden.");
+        setARStatus("Kein passender Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte.");
       }
     }
   }
@@ -1155,7 +1202,7 @@ window.addEventListener("resize", ()=>{
 
 updateViewerSize();
 setStatus("Warte auf Modell …");
-setARStatus("Lade ein Modell und lege dann ein weißes Quadrat als Marker auf den Boden.");
+setARStatus("Lade ein Modell und halte dann einen Marker mit schwarzem Rand und weißer Mitte auf den Boden.");
 
 </script>
 

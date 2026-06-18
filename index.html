@@ -170,7 +170,8 @@ display:block;
 
 #viewerHint,
 #statusBox,
-#arStatus{
+#arStatus,
+#photoStatus{
 position:absolute;
 left:50%;
 transform:translateX(-50%);
@@ -200,6 +201,17 @@ z-index:950;
 max-width:92vw;
 white-space:normal;
 text-align:center;
+}
+
+#photoStatus{
+top:20px;
+z-index:960;
+opacity:0;
+transition:opacity .25s ease;
+}
+
+#photoStatus.visible{
+opacity:1;
 }
 
 @media (max-width: 640px){
@@ -256,6 +268,10 @@ text-align:center;
     Oberfläche verankern
     </button>
 
+    <button id="photoBtn">
+    Foto erstellen
+    </button>
+
     <br><br>
 
     <label>Skalierung</label><br>
@@ -284,6 +300,7 @@ text-align:center;
 </div>
 
 <div id="arStatus">Lade ein Modell und starte dann die Oberflächenverankerung.</div>
+<div id="photoStatus">Foto gespeichert</div>
 
 <div id="viewerOverlay">
   <div id="viewerCard">
@@ -327,7 +344,8 @@ scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({
 antialias:true,
-alpha:true
+alpha:true,
+preserveDrawingBuffer:true
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -351,6 +369,7 @@ let cameraStream = null;
 let surfaceAnchorMode = false;
 let surfacePlaced = false;
 let lastSurfaceMatrix = null;
+let photoStatusTimer = null;
 const surfacePoints = [];
 const SURFACE_POINT_LIMIT = 120;
 
@@ -361,6 +380,7 @@ const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
 const screenViewBtn = document.getElementById("screenViewBtn");
 const mixedViewBtn = document.getElementById("mixedViewBtn");
 const surfaceAnchorBtn = document.getElementById("surfaceAnchorBtn");
+const photoBtn = document.getElementById("photoBtn");
 const closeViewerBtn = document.getElementById("closeViewerBtn");
 const scaleInput = document.getElementById("scale");
 const rotationInput = document.getElementById("rotation");
@@ -369,6 +389,7 @@ const cameraFeed = document.getElementById("cameraFeed");
 const ui = document.getElementById("ui");
 const toggleUiBtn = document.getElementById("toggleUiBtn");
 const arStatus = document.getElementById("arStatus");
+const photoStatus = document.getElementById("photoStatus");
 
 const viewerScene = new THREE.Scene();
 viewerScene.background = null;
@@ -423,6 +444,17 @@ function setStatus(message){
 
 function setARStatus(message){
   arStatus.textContent = message;
+}
+
+function showPhotoStatus(message){
+  photoStatus.textContent = message;
+  photoStatus.classList.add("visible");
+  if(photoStatusTimer){
+    clearTimeout(photoStatusTimer);
+  }
+  photoStatusTimer = setTimeout(()=>{
+    photoStatus.classList.remove("visible");
+  }, 2200);
 }
 
 function toggleUi(){
@@ -755,9 +787,67 @@ function hideScreenModel(){
   overlay.classList.remove("active");
 }
 
+function downloadDataURL(dataURL, filename){
+  const link = document.createElement("a");
+  link.href = dataURL;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function buildPhotoFilename(){
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  return `ar-foto-${stamp}.png`;
+}
+
+function capturePhoto(){
+  const isViewerOpen = overlay.classList.contains("active");
+
+  if(isViewerOpen){
+    updateViewerSize();
+    const dataURL = viewerRenderer.domElement.toDataURL("image/png");
+    downloadDataURL(dataURL, buildPhotoFilename());
+    showPhotoStatus("3D-Foto gespeichert");
+    return;
+  }
+
+  if(!mixedModeActive && !surfacePlaced && !surfaceAnchorMode){
+    alert("Starte zuerst 'Kamera + 3D', 'Oberfläche verankern' oder öffne die 3D Ansicht.");
+    return;
+  }
+
+  const width = Math.max(1, window.innerWidth);
+  const height = Math.max(1, window.innerHeight);
+  const photoCanvas = document.createElement("canvas");
+  photoCanvas.width = width;
+  photoCanvas.height = height;
+  const ctx = photoCanvas.getContext("2d");
+
+  try{
+    if(cameraFeed.readyState >= 2 && cameraFeed.videoWidth > 0 && cameraFeed.videoHeight > 0){
+      ctx.drawImage(cameraFeed, 0, 0, width, height);
+    }else{
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    ctx.drawImage(renderer.domElement, 0, 0, width, height);
+
+    const dataURL = photoCanvas.toDataURL("image/png");
+    downloadDataURL(dataURL, buildPhotoFilename());
+    showPhotoStatus("AR-Foto gespeichert");
+  }catch(error){
+    console.error("Foto konnte nicht erstellt werden", error);
+    alert("Das Foto konnte nicht erstellt werden.");
+  }
+}
+
 screenViewBtn.addEventListener("click", showScreenModel);
 mixedViewBtn.addEventListener("click", showMixedView);
 surfaceAnchorBtn.addEventListener("click", startSurfaceAnchorMode);
+photoBtn.addEventListener("click", capturePhoto);
 closeViewerBtn.addEventListener("click", hideScreenModel);
 overlay.addEventListener("click", e=>{
   if(e.target === overlay){

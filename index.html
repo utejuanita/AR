@@ -274,10 +274,6 @@ text-align:center;
     <button id="resetBtn">
     Reset
     </button>
-
-    <button id="iosBtn">
-    AR (iPhone)
-    </button>
   </div>
 </div>
 
@@ -771,11 +767,6 @@ reticle.matrixAutoUpdate = false;
 reticle.visible = false;
 scene.add(reticle);
 
-function isIOS(){
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
 function isAndroidAR(){
   return navigator.xr;
 }
@@ -920,15 +911,6 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   }
 
   setARStatus("Zurückgesetzt. Du kannst die Oberflächenverankerung neu starten.");
-});
-
-document.getElementById("iosBtn").addEventListener("click", ()=>{
-  if(!isIOS()){
-    alert("Nur für iPhone/iPad");
-    return;
-  }
-
-  window.location.href = "./model.usdz";
 });
 
 renderer.setAnimationLoop((timestamp, frame)=>{

@@ -24,7 +24,7 @@ background:rgba(0,0,0,.7);
 padding:10px;
 border-radius:10px;
 color:white;
-max-width:260px;
+max-width:280px;
 }
 
 button{
@@ -60,8 +60,8 @@ pointer-events:auto;
 }
 
 #viewerCard{
-width:min(92vw, 980px);
-height:min(82vh, 760px);
+width:min(94vw, 980px);
+height:min(84vh, 760px);
 background:#111;
 border:1px solid rgba(255,255,255,.12);
 border-radius:18px;
@@ -105,18 +105,29 @@ height:100%;
 display:block;
 }
 
-#viewerHint{
+#viewerHint,
+#statusBox{
 position:absolute;
-bottom:14px;
 left:50%;
 transform:translateX(-50%);
-background:rgba(0,0,0,.55);
+background:rgba(0,0,0,.58);
 color:#fff;
 padding:8px 12px;
 border-radius:999px;
 font-size:13px;
 pointer-events:none;
 white-space:nowrap;
+}
+
+#viewerHint{
+bottom:14px;
+}
+
+#statusBox{
+top:14px;
+max-width:90%;
+overflow:hidden;
+text-overflow:ellipsis;
 }
 </style>
 </head>
@@ -172,6 +183,7 @@ AR (iPhone)
       <button id="closeViewerBtn">Schließen</button>
     </div>
     <div id="viewerCanvasWrap">
+      <div id="statusBox">Warte auf Modell …</div>
       <div id="viewerHint">Ziehen zum Drehen · Pinch zum Zoomen</div>
     </div>
   </div>
@@ -189,74 +201,42 @@ AR (iPhone)
 <script type="module">
 
 import * as THREE from "three";
-
-import { GLTFLoader }
-from "three/addons/loaders/GLTFLoader.js";
-
-import { ARButton }
-from "three/addons/webxr/ARButton.js";
-
-import { OrbitControls }
-from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { ARButton } from "three/addons/webxr/ARButton.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const scene = new THREE.Scene();
 
-const camera =
-new THREE.PerspectiveCamera(
+const camera = new THREE.PerspectiveCamera(
 70,
-window.innerWidth/window.innerHeight,
+window.innerWidth / window.innerHeight,
 0.01,
 100
 );
 camera.position.set(0, 1.6, 3);
 
-const renderer =
-new THREE.WebGLRenderer({
+const renderer = new THREE.WebGLRenderer({
 antialias:true,
 alpha:true
 });
-
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.setSize(
-window.innerWidth,
-window.innerHeight
-);
-
+renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-document.body.appendChild(
-renderer.domElement
-);
-
-const hemi =
-new THREE.HemisphereLight(
-0xffffff,
-0x444444,
-2
-);
-
-scene.add(hemi);
-
-const dir =
-new THREE.DirectionalLight(
-0xffffff,
-2
-);
-
-dir.position.set(3,5,2);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
+const dir = new THREE.DirectionalLight(0xffffff, 2);
+dir.position.set(3, 5, 2);
 scene.add(dir);
 
-let model=null;
-let screenModel=null;
-let currentObjectURL=null;
-
+let model = null;
+let screenModel = null;
+let currentObjectURL = null;
 let reticle;
+let hitTestSource = null;
+let hitTestSourceRequested = false;
 
-let hitTestSource=null;
-let hitTestSourceRequested=false;
-
-const loader =
-new GLTFLoader();
+const loader = new GLTFLoader();
 
 const overlay = document.getElementById("viewerOverlay");
 const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
@@ -264,44 +244,42 @@ const screenViewBtn = document.getElementById("screenViewBtn");
 const closeViewerBtn = document.getElementById("closeViewerBtn");
 const scaleInput = document.getElementById("scale");
 const rotationInput = document.getElementById("rotation");
+const statusBox = document.getElementById("statusBox");
 
 const viewerScene = new THREE.Scene();
 viewerScene.background = new THREE.Color(0x101010);
 
-const viewerCamera = new THREE.PerspectiveCamera(
-45,
-1,
-0.01,
-1000
-);
+const viewerCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
 viewerCamera.position.set(0, 1, 3);
 
 const viewerRenderer = new THREE.WebGLRenderer({
 antialias:true,
-alpha:true
+alpha:true,
+preserveDrawingBuffer:true
 });
 viewerRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 viewerCanvasWrap.appendChild(viewerRenderer.domElement);
 
-const controls = new OrbitControls(
-viewerRenderer.domElement,
-viewerCamera
-);
+const controls = new OrbitControls(viewerCamera, viewerRenderer.domElement);
 controls.enableDamping = true;
 controls.enablePan = false;
 controls.target.set(0, 0.5, 0);
 
-viewerScene.add(new THREE.AmbientLight(0xffffff, 1.8));
-const viewerDirLight = new THREE.DirectionalLight(0xffffff, 2.2);
+viewerScene.add(new THREE.AmbientLight(0xffffff, 2.4));
+const viewerDirLight = new THREE.DirectionalLight(0xffffff, 2.5);
 viewerDirLight.position.set(3, 4, 5);
 viewerScene.add(viewerDirLight);
-const viewerFillLight = new THREE.DirectionalLight(0xffffff, 1.2);
+const viewerFillLight = new THREE.DirectionalLight(0xffffff, 1.6);
 viewerFillLight.position.set(-4, 2, -2);
 viewerScene.add(viewerFillLight);
 
 const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
 viewerGrid.position.y = -0.001;
 viewerScene.add(viewerGrid);
+
+function setStatus(message){
+  statusBox.textContent = message;
+}
 
 function updateViewerSize(){
   const rect = viewerCanvasWrap.getBoundingClientRect();
@@ -313,38 +291,88 @@ function updateViewerSize(){
 }
 
 function centerObjectAtGround(object){
+  object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);
   const center = box.getCenter(new THREE.Vector3());
-  const min = box.min.clone();
+  const minY = box.min.y;
   object.position.x -= center.x;
-  object.position.y -= min.y;
+  object.position.y -= minY;
   object.position.z -= center.z;
+  object.updateMatrixWorld(true);
+}
+
+function normalizeObjectSize(object){
+  object.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+
+  if(!maxDim || !isFinite(maxDim)){
+    return 1;
+  }
+
+  const targetSize = 1.5;
+  const factor = targetSize / maxDim;
+  object.scale.multiplyScalar(factor);
+  object.updateMatrixWorld(true);
+  return factor;
+}
+
+function ensureVisibleMaterials(root){
+  root.traverse(node=>{
+    if(!node.isMesh) return;
+
+    if(Array.isArray(node.material)){
+      node.material = node.material.map(material => material || new THREE.MeshStandardMaterial({ color:0xcccccc }));
+      node.material.forEach(material => {
+        if("side" in material) material.side = THREE.DoubleSide;
+        material.needsUpdate = true;
+      });
+    }else{
+      if(!node.material){
+        node.material = new THREE.MeshStandardMaterial({ color:0xcccccc });
+      }
+      if("side" in node.material) node.material.side = THREE.DoubleSide;
+      node.material.needsUpdate = true;
+    }
+
+    if(node.geometry){
+      node.geometry.computeBoundingSphere();
+      node.geometry.computeVertexNormals();
+    }
+
+    node.frustumCulled = false;
+    node.castShadow = false;
+    node.receiveShadow = false;
+  });
 }
 
 function fitCameraToObject(object){
+  object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
   const fov = viewerCamera.fov * (Math.PI / 180);
-  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-  cameraZ *= 2.2;
+  let cameraZ = Math.abs((maxDim / 2) / Math.tan(fov / 2));
+  cameraZ *= 2.4;
 
-  viewerCamera.position.set(center.x, center.y + maxDim * 0.6, center.z + cameraZ);
-  viewerCamera.near = Math.max(0.01, maxDim / 100);
-  viewerCamera.far = Math.max(1000, maxDim * 20);
+  viewerCamera.position.set(center.x, center.y + maxDim * 0.7, center.z + cameraZ);
+  viewerCamera.near = Math.max(0.001, maxDim / 1000);
+  viewerCamera.far = Math.max(2000, maxDim * 50);
   viewerCamera.updateProjectionMatrix();
 
   controls.target.copy(center);
-  controls.minDistance = Math.max(0.1, maxDim * 0.5);
-  controls.maxDistance = Math.max(2, maxDim * 8);
+  controls.minDistance = Math.max(0.05, maxDim * 0.25);
+  controls.maxDistance = Math.max(10, maxDim * 12);
   controls.update();
+
+  setStatus(`Modell geladen · Größe ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
 }
 
 function syncScreenModelTransform(){
   if(!screenModel || !model) return;
   screenModel.rotation.copy(model.rotation);
-  screenModel.scale.copy(model.scale);
 }
 
 function rebuildScreenModel(autoOpen=false){
@@ -360,8 +388,17 @@ function rebuildScreenModel(autoOpen=false){
   screenModel.visible = true;
   screenModel.position.set(0,0,0);
   screenModel.rotation.set(0,0,0);
+  screenModel.scale.set(1,1,1);
+
+  ensureVisibleMaterials(screenModel);
   centerObjectAtGround(screenModel);
+  normalizeObjectSize(screenModel);
+  centerObjectAtGround(screenModel);
+
+  const sliderScale = parseFloat(scaleInput.value || "1");
+  screenModel.scale.multiplyScalar(sliderScale);
   syncScreenModelTransform();
+
   viewerScene.add(screenModel);
   fitCameraToObject(screenModel);
   updateViewerSize();
@@ -392,306 +429,154 @@ overlay.addEventListener("click", e=>{
   }
 });
 
-reticle =
-new THREE.Mesh(
-new THREE.RingGeometry(
-0.08,
-0.1,
-32
-).rotateX(-Math.PI/2),
-
-new THREE.MeshBasicMaterial({
-color:0x00ff00
-})
+reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.08, 0.1, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color:0x00ff00 })
 );
-
-reticle.matrixAutoUpdate=false;
-reticle.visible=false;
-
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
 scene.add(reticle);
 
 function isIOS(){
-
-return /iPad|iPhone|iPod/.test(
-navigator.userAgent
-) ||
-(
-navigator.platform==="MacIntel" &&
-navigator.maxTouchPoints>1
-);
-
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 function isAndroidAR(){
-
-return navigator.xr;
-
+  return navigator.xr;
 }
 
 if(isAndroidAR()){
-
-document.body.appendChild(
-ARButton.createButton(
-renderer,
-{
-requiredFeatures:["hit-test"]
-}
-)
-);
-
+  document.body.appendChild(
+    ARButton.createButton(renderer, {
+      requiredFeatures:["hit-test"]
+    })
+  );
 }
 
-document
-.getElementById("fileInput")
-.addEventListener(
-"change",
-e=>{
+document.getElementById("fileInput").addEventListener("change", e=>{
+  const file = e.target.files[0];
+  if(!file) return;
 
-const file=e.target.files[0];
+  setStatus(`Lade ${file.name} …`);
+  overlay.classList.add("active");
 
-if(!file) return;
+  if(currentObjectURL){
+    URL.revokeObjectURL(currentObjectURL);
+  }
 
-if(currentObjectURL){
-  URL.revokeObjectURL(currentObjectURL);
-}
+  const url = URL.createObjectURL(file);
+  currentObjectURL = url;
 
-const url=
-URL.createObjectURL(file);
-currentObjectURL = url;
+  loader.load(
+    url,
+    gltf=>{
+      if(model){
+        scene.remove(model);
+      }
 
-loader.load(
-url,
-gltf=>{
+      model = gltf.scene;
+      model.visible = false;
+      scene.add(model);
 
-if(model){
-scene.remove(model);
-}
-
-model=gltf.scene;
-model.visible=false;
-scene.add(model);
-
-rebuildScreenModel(true);
-
-},
-undefined,
-error=>{
-  console.error("Fehler beim Laden des 3D-Modells", error);
-  alert("Das 3D-Modell konnte nicht geladen werden.");
-}
-);
-
-}
-);
-
-renderer.domElement.addEventListener(
-"click",
-()=>{
-
-if(
-!model ||
-!reticle.visible
-) return;
-
-model.visible=true;
-
-model.position.setFromMatrixPosition(
-reticle.matrix
-);
-
-model.quaternion.setFromRotationMatrix(
-reticle.matrix
-);
-
-syncScreenModelTransform();
-
-}
-);
-
-scaleInput
-.addEventListener(
-"input",
-e=>{
-
-if(!model) return;
-
-const s=
-parseFloat(
-e.target.value
-);
-
-model.scale.set(
-s,s,s
-);
-
-syncScreenModelTransform();
-if(screenModel){
-  fitCameraToObject(screenModel);
-}
-
-}
-);
-
-rotationInput
-.addEventListener(
-"input",
-e=>{
-
-if(!model) return;
-
-model.rotation.y=
-THREE.MathUtils.degToRad(
-e.target.value
-);
-
-syncScreenModelTransform();
-
-}
-);
-
-document
-.getElementById("resetBtn")
-.addEventListener(
-"click",
-()=>{
-
-if(!model) return;
-
-model.position.set(
-0,0,0
-);
-
-model.rotation.set(
-0,0,0
-);
-
-model.scale.set(
-1,1,1
-);
-
-scaleInput.value = 1;
-rotationInput.value = 0;
-
-syncScreenModelTransform();
-if(screenModel){
-  fitCameraToObject(screenModel);
-}
-
-}
-);
-
-document
-.getElementById("iosBtn")
-.addEventListener(
-"click",
-()=>{
-
-if(!isIOS()){
-
-alert(
-"Nur für iPhone/iPad"
-);
-
-return;
-
-}
-
-window.location.href=
-"./model.usdz";
-
-}
-);
-
-renderer.setAnimationLoop(
-(timestamp,frame)=>{
-
-if(frame){
-
-const session=
-renderer.xr.getSession();
-
-const referenceSpace=
-renderer.xr.getReferenceSpace();
-
-if(
-!hitTestSourceRequested
-&& session
-){
-
-session
-.requestReferenceSpace(
-"viewer"
-)
-.then(viewerSpace=>{
-
-session
-.requestHitTestSource({
-space:viewerSpace
-})
-.then(source=>{
-
-hitTestSource=
-source;
-
+      rebuildScreenModel(true);
+    },
+    undefined,
+    error=>{
+      console.error("Fehler beim Laden des 3D-Modells", error);
+      setStatus("Fehler beim Laden des Modells");
+      alert("Das 3D-Modell konnte nicht geladen werden.");
+    }
+  );
 });
 
+renderer.domElement.addEventListener("click", ()=>{
+  if(!model || !reticle.visible) return;
+
+  model.visible = true;
+  model.position.setFromMatrixPosition(reticle.matrix);
+  model.quaternion.setFromRotationMatrix(reticle.matrix);
+  syncScreenModelTransform();
 });
 
-session
-.addEventListener(
-"end",
-()=>{
+scaleInput.addEventListener("input", e=>{
+  if(!model) return;
 
-hitTestSourceRequested=false;
-hitTestSource=null;
+  const s = parseFloat(e.target.value);
+  model.scale.set(s, s, s);
 
-}
-);
+  if(screenModel){
+    rebuildScreenModel(overlay.classList.contains("active"));
+  }
+});
 
-hitTestSourceRequested=true;
+rotationInput.addEventListener("input", e=>{
+  if(!model) return;
 
-}
+  model.rotation.y = THREE.MathUtils.degToRad(e.target.value);
+  syncScreenModelTransform();
+});
 
-if(hitTestSource){
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  if(!model) return;
 
-const hits=
-frame.getHitTestResults(
-hitTestSource
-);
+  model.position.set(0,0,0);
+  model.rotation.set(0,0,0);
+  model.scale.set(1,1,1);
 
-if(hits.length){
+  scaleInput.value = 1;
+  rotationInput.value = 0;
 
-const hit=
-hits[0];
+  if(screenModel){
+    rebuildScreenModel(overlay.classList.contains("active"));
+  }
+});
 
-const pose=
-hit.getPose(
-referenceSpace
-);
+document.getElementById("iosBtn").addEventListener("click", ()=>{
+  if(!isIOS()){
+    alert("Nur für iPhone/iPad");
+    return;
+  }
 
-reticle.visible=true;
+  window.location.href = "./model.usdz";
+});
 
-reticle.matrix.fromArray(
-pose.transform.matrix
-);
+renderer.setAnimationLoop((timestamp, frame)=>{
+  if(frame){
+    const session = renderer.xr.getSession();
+    const referenceSpace = renderer.xr.getReferenceSpace();
 
-}else{
+    if(!hitTestSourceRequested && session){
+      session.requestReferenceSpace("viewer").then(viewerSpace=>{
+        session.requestHitTestSource({ space:viewerSpace }).then(source=>{
+          hitTestSource = source;
+        });
+      });
 
-reticle.visible=false;
+      session.addEventListener("end", ()=>{
+        hitTestSourceRequested = false;
+        hitTestSource = null;
+      });
 
-}
+      hitTestSourceRequested = true;
+    }
 
-}
+    if(hitTestSource){
+      const hits = frame.getHitTestResults(hitTestSource);
 
-}
+      if(hits.length){
+        const hit = hits[0];
+        const pose = hit.getPose(referenceSpace);
+        reticle.visible = true;
+        reticle.matrix.fromArray(pose.transform.matrix);
+      }else{
+        reticle.visible = false;
+      }
+    }
+  }
 
-renderer.render(
-scene,
-camera
-);
-
-}
-);
+  renderer.render(scene, camera);
+});
 
 function animateViewer(){
   requestAnimationFrame(animateViewer);
@@ -700,27 +585,15 @@ function animateViewer(){
 }
 animateViewer();
 
-window.addEventListener(
-"resize",
-()=>{
-
-camera.aspect=
-window.innerWidth/
-window.innerHeight;
-
-camera.updateProjectionMatrix();
-
-renderer.setSize(
-window.innerWidth,
-window.innerHeight
-);
+window.addEventListener("resize", ()=>{
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  updateViewerSize();
+});
 
 updateViewerSize();
-
-}
-);
-
-updateViewerSize();
+setStatus("Warte auf Modell …");
 
 </script>
 

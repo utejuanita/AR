@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Universal AR Viewer</title>
 
 <style>
@@ -15,6 +15,29 @@ background:#000;
 font-family:Arial,sans-serif;
 }
 
+body{
+position:relative;
+}
+
+#cameraFeed,
+#xrCanvas{
+position:fixed;
+inset:0;
+width:100%;
+height:100%;
+object-fit:cover;
+}
+
+#cameraFeed{
+z-index:0;
+background:#000;
+}
+
+#xrCanvas{
+z-index:1;
+pointer-events:auto;
+}
+
 #ui{
 position:absolute;
 top:10px;
@@ -25,6 +48,7 @@ padding:10px;
 border-radius:10px;
 color:white;
 max-width:280px;
+backdrop-filter:blur(8px);
 }
 
 button{
@@ -47,7 +71,7 @@ inset:0;
 display:flex;
 align-items:center;
 justify-content:center;
-background:radial-gradient(circle at center, rgba(30,30,30,.15), rgba(0,0,0,.88));
+background:radial-gradient(circle at center, rgba(30,30,30,.15), rgba(0,0,0,.45));
 z-index:900;
 pointer-events:none;
 opacity:0;
@@ -62,13 +86,14 @@ pointer-events:auto;
 #viewerCard{
 width:min(94vw, 980px);
 height:min(84vh, 760px);
-background:#111;
+background:rgba(17,17,17,.72);
 border:1px solid rgba(255,255,255,.12);
 border-radius:18px;
 box-shadow:0 20px 60px rgba(0,0,0,.45);
 overflow:hidden;
 display:flex;
 flex-direction:column;
+backdrop-filter:blur(10px);
 }
 
 #viewerHeader{
@@ -133,6 +158,8 @@ text-overflow:ellipsis;
 </head>
 <body>
 
+<video id="cameraFeed" autoplay playsinline muted></video>
+
 <div id="ui">
 
 <input type="file"
@@ -143,6 +170,10 @@ text-overflow:ellipsis;
 
 <button id="screenViewBtn">
 3D Ansicht
+</button>
+
+<button id="mixedViewBtn">
+Kamera + 3D
 </button>
 
 <br><br>
@@ -213,7 +244,8 @@ window.innerWidth / window.innerHeight,
 0.01,
 100
 );
-camera.position.set(0, 1.6, 3);
+camera.position.set(0, 0, 2.8);
+scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({
 antialias:true,
@@ -222,10 +254,11 @@ alpha:true
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
+renderer.domElement.id = "xrCanvas";
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2));
-const dir = new THREE.DirectionalLight(0xffffff, 2);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.2));
+const dir = new THREE.DirectionalLight(0xffffff, 2.4);
 dir.position.set(3, 5, 2);
 scene.add(dir);
 
@@ -235,19 +268,23 @@ let currentObjectURL = null;
 let reticle;
 let hitTestSource = null;
 let hitTestSourceRequested = false;
+let mixedModeActive = false;
+let cameraStream = null;
 
 const loader = new GLTFLoader();
 
 const overlay = document.getElementById("viewerOverlay");
 const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
 const screenViewBtn = document.getElementById("screenViewBtn");
+const mixedViewBtn = document.getElementById("mixedViewBtn");
 const closeViewerBtn = document.getElementById("closeViewerBtn");
 const scaleInput = document.getElementById("scale");
 const rotationInput = document.getElementById("rotation");
 const statusBox = document.getElementById("statusBox");
+const cameraFeed = document.getElementById("cameraFeed");
 
 const viewerScene = new THREE.Scene();
-viewerScene.background = new THREE.Color(0x101010);
+viewerScene.background = null;
 
 const viewerCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
 viewerCamera.position.set(0, 1, 3);
@@ -257,6 +294,7 @@ antialias:true,
 alpha:true,
 preserveDrawingBuffer:true
 });
+viewerRenderer.setClearColor(0x000000, 0);
 viewerRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 viewerCanvasWrap.appendChild(viewerRenderer.domElement);
 
@@ -279,6 +317,29 @@ viewerScene.add(viewerGrid);
 
 function setStatus(message){
   statusBox.textContent = message;
+}
+
+async function startCameraFeed(){
+  if(cameraStream){
+    return true;
+  }
+
+  try{
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ ideal:"environment" }
+      },
+      audio:false
+    });
+    cameraFeed.srcObject = cameraStream;
+    await cameraFeed.play();
+    return true;
+  }catch(error){
+    console.error("Kamera konnte nicht gestartet werden", error);
+    setStatus("Kamera konnte nicht gestartet werden");
+    alert("Kamerazugriff wurde nicht erlaubt oder ist nicht verfügbar.");
+    return false;
+  }
 }
 
 function updateViewerSize(){
@@ -326,6 +387,7 @@ function ensureVisibleMaterials(root){
       node.material = node.material.map(material => material || new THREE.MeshStandardMaterial({ color:0xcccccc }));
       node.material.forEach(material => {
         if("side" in material) material.side = THREE.DoubleSide;
+        material.transparent = material.opacity < 1;
         material.needsUpdate = true;
       });
     }else{
@@ -333,6 +395,7 @@ function ensureVisibleMaterials(root){
         node.material = new THREE.MeshStandardMaterial({ color:0xcccccc });
       }
       if("side" in node.material) node.material.side = THREE.DoubleSide;
+      node.material.transparent = node.material.opacity < 1;
       node.material.needsUpdate = true;
     }
 
@@ -342,8 +405,6 @@ function ensureVisibleMaterials(root){
     }
 
     node.frustumCulled = false;
-    node.castShadow = false;
-    node.receiveShadow = false;
   });
 }
 
@@ -408,13 +469,59 @@ function rebuildScreenModel(autoOpen=false){
   }
 }
 
+function rebuildMixedModel(){
+  if(!model){
+    return;
+  }
+
+  if(scene.getObjectByName("mixedModelRoot")){
+    scene.remove(scene.getObjectByName("mixedModelRoot"));
+  }
+
+  const mixedModel = model.clone(true);
+  mixedModel.name = "mixedModelRoot";
+  mixedModel.visible = true;
+  mixedModel.position.set(0, -0.4, -1.8);
+  mixedModel.rotation.set(0, 0, 0);
+  mixedModel.scale.set(1, 1, 1);
+
+  ensureVisibleMaterials(mixedModel);
+  centerObjectAtGround(mixedModel);
+  normalizeObjectSize(mixedModel);
+  centerObjectAtGround(mixedModel);
+
+  const sliderScale = parseFloat(scaleInput.value || "1");
+  mixedModel.scale.multiplyScalar(sliderScale);
+  mixedModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0);
+
+  scene.add(mixedModel);
+}
+
 function showScreenModel(){
   if(!model){
     alert("Bitte zuerst ein 3D-Modell laden.");
     return;
   }
 
+  mixedModeActive = false;
   rebuildScreenModel(true);
+}
+
+async function showMixedView(){
+  if(!model){
+    alert("Bitte zuerst ein 3D-Modell laden.");
+    return;
+  }
+
+  const ok = await startCameraFeed();
+  if(!ok){
+    return;
+  }
+
+  mixedModeActive = true;
+  overlay.classList.remove("active");
+  rebuildMixedModel();
+  setStatus("Kamerabild mit 3D-Modell aktiv");
 }
 
 function hideScreenModel(){
@@ -422,6 +529,7 @@ function hideScreenModel(){
 }
 
 screenViewBtn.addEventListener("click", showScreenModel);
+mixedViewBtn.addEventListener("click", showMixedView);
 closeViewerBtn.addEventListener("click", hideScreenModel);
 overlay.addEventListener("click", e=>{
   if(e.target === overlay){
@@ -475,11 +583,19 @@ document.getElementById("fileInput").addEventListener("change", e=>{
         scene.remove(model);
       }
 
+      const oldMixed = scene.getObjectByName("mixedModelRoot");
+      if(oldMixed){
+        scene.remove(oldMixed);
+      }
+
       model = gltf.scene;
       model.visible = false;
       scene.add(model);
 
       rebuildScreenModel(true);
+      if(mixedModeActive){
+        rebuildMixedModel();
+      }
     },
     undefined,
     error=>{
@@ -491,6 +607,10 @@ document.getElementById("fileInput").addEventListener("change", e=>{
 });
 
 renderer.domElement.addEventListener("click", ()=>{
+  if(mixedModeActive){
+    return;
+  }
+
   if(!model || !reticle.visible) return;
 
   model.visible = true;
@@ -508,6 +628,10 @@ scaleInput.addEventListener("input", e=>{
   if(screenModel){
     rebuildScreenModel(overlay.classList.contains("active"));
   }
+
+  if(mixedModeActive){
+    rebuildMixedModel();
+  }
 });
 
 rotationInput.addEventListener("input", e=>{
@@ -515,6 +639,10 @@ rotationInput.addEventListener("input", e=>{
 
   model.rotation.y = THREE.MathUtils.degToRad(e.target.value);
   syncScreenModelTransform();
+
+  if(mixedModeActive){
+    rebuildMixedModel();
+  }
 });
 
 document.getElementById("resetBtn").addEventListener("click", ()=>{
@@ -529,6 +657,10 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
 
   if(screenModel){
     rebuildScreenModel(overlay.classList.contains("active"));
+  }
+
+  if(mixedModeActive){
+    rebuildMixedModel();
   }
 });
 

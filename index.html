@@ -163,7 +163,8 @@ display:block;
 }
 
 #viewerHint,
-#statusBox{
+#statusBox,
+#arStatus{
 position:absolute;
 left:50%;
 transform:translateX(-50%);
@@ -185,6 +186,11 @@ top:14px;
 max-width:90%;
 overflow:hidden;
 text-overflow:ellipsis;
+}
+
+#arStatus{
+bottom:20px;
+z-index:950;
 }
 
 @media (max-width: 640px){
@@ -237,6 +243,10 @@ text-overflow:ellipsis;
     Kamera + 3D
     </button>
 
+    <button id="surfaceAnchorBtn">
+    Oberfläche verankern
+    </button>
+
     <br><br>
 
     <label>Skalierung</label><br>
@@ -267,6 +277,8 @@ text-overflow:ellipsis;
     </button>
   </div>
 </div>
+
+<div id="arStatus">Lade ein Modell und starte dann die Oberflächenverankerung.</div>
 
 <div id="viewerOverlay">
   <div id="viewerCard">
@@ -331,6 +343,8 @@ let hitTestSource = null;
 let hitTestSourceRequested = false;
 let mixedModeActive = false;
 let cameraStream = null;
+let surfaceAnchorMode = false;
+let surfacePlaced = false;
 
 const loader = new GLTFLoader();
 
@@ -338,6 +352,7 @@ const overlay = document.getElementById("viewerOverlay");
 const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
 const screenViewBtn = document.getElementById("screenViewBtn");
 const mixedViewBtn = document.getElementById("mixedViewBtn");
+const surfaceAnchorBtn = document.getElementById("surfaceAnchorBtn");
 const closeViewerBtn = document.getElementById("closeViewerBtn");
 const scaleInput = document.getElementById("scale");
 const rotationInput = document.getElementById("rotation");
@@ -345,6 +360,7 @@ const statusBox = document.getElementById("statusBox");
 const cameraFeed = document.getElementById("cameraFeed");
 const ui = document.getElementById("ui");
 const toggleUiBtn = document.getElementById("toggleUiBtn");
+const arStatus = document.getElementById("arStatus");
 
 const viewerScene = new THREE.Scene();
 viewerScene.background = null;
@@ -382,6 +398,10 @@ function setStatus(message){
   statusBox.textContent = message;
 }
 
+function setARStatus(message){
+  arStatus.textContent = message;
+}
+
 function toggleUi(){
   const collapsed = ui.classList.toggle("collapsed");
   toggleUiBtn.textContent = collapsed ? "›" : "‹";
@@ -408,6 +428,7 @@ async function startCameraFeed(){
   }catch(error){
     console.error("Kamera konnte nicht gestartet werden", error);
     setStatus("Kamera konnte nicht gestartet werden");
+    setARStatus("Kein Kamerazugriff verfügbar.");
     alert("Kamerazugriff wurde nicht erlaubt oder ist nicht verfügbar.");
     return false;
   }
@@ -540,8 +561,49 @@ function rebuildScreenModel(autoOpen=false){
   }
 }
 
+function clearPlacedSurfaceModel(){
+  const existing = scene.getObjectByName("surfaceAnchoredModel");
+  if(existing){
+    scene.remove(existing);
+  }
+}
+
+function placeModelOnDetectedSurface(){
+  if(!model || !reticle.visible){
+    setARStatus("Noch keine Oberfläche erkannt. Bewege die Kamera langsam über Boden oder Tisch.");
+    return;
+  }
+
+  clearPlacedSurfaceModel();
+
+  const anchoredModel = model.clone(true);
+  anchoredModel.name = "surfaceAnchoredModel";
+  anchoredModel.visible = true;
+  anchoredModel.position.set(0,0,0);
+  anchoredModel.rotation.set(0,0,0);
+  anchoredModel.scale.set(1,1,1);
+
+  ensureVisibleMaterials(anchoredModel);
+  centerObjectAtGround(anchoredModel);
+  normalizeObjectSize(anchoredModel);
+  centerObjectAtGround(anchoredModel);
+
+  const sliderScale = parseFloat(scaleInput.value || "1");
+  anchoredModel.scale.multiplyScalar(sliderScale);
+  anchoredModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0);
+
+  anchoredModel.position.setFromMatrixPosition(reticle.matrix);
+  anchoredModel.quaternion.setFromRotationMatrix(reticle.matrix);
+  anchoredModel.translateY(0.001);
+
+  scene.add(anchoredModel);
+  surfacePlaced = true;
+  surfaceAnchorMode = false;
+  setARStatus("Oberfläche erkannt und Modell verankert. Du kannst jetzt mit der Kamera darum herumgehen.");
+}
+
 function rebuildMixedModel(){
-  if(!model){
+  if(!model || surfacePlaced){
     return;
   }
 
@@ -576,6 +638,7 @@ function showScreenModel(){
   }
 
   mixedModeActive = false;
+  surfaceAnchorMode = false;
   rebuildScreenModel(true);
 }
 
@@ -591,9 +654,37 @@ async function showMixedView(){
   }
 
   mixedModeActive = true;
+  surfaceAnchorMode = false;
   overlay.classList.remove("active");
-  rebuildMixedModel();
-  setStatus("Kamerabild mit 3D-Modell aktiv");
+  if(!surfacePlaced){
+    rebuildMixedModel();
+  }
+  setARStatus("Kamerabild mit 3D-Modell aktiv");
+}
+
+async function startSurfaceAnchorMode(){
+  if(!model){
+    alert("Bitte zuerst ein 3D-Modell laden.");
+    return;
+  }
+
+  const ok = await startCameraFeed();
+  if(!ok){
+    return;
+  }
+
+  mixedModeActive = false;
+  surfacePlaced = false;
+  surfaceAnchorMode = true;
+  overlay.classList.remove("active");
+  clearPlacedSurfaceModel();
+
+  const existingMixed = scene.getObjectByName("mixedModelRoot");
+  if(existingMixed){
+    scene.remove(existingMixed);
+  }
+
+  setARStatus("Suche Oberfläche … Bewege die Kamera langsam. Tippe dann ins Bild, um das Modell zu verankern.");
 }
 
 function hideScreenModel(){
@@ -602,6 +693,7 @@ function hideScreenModel(){
 
 screenViewBtn.addEventListener("click", showScreenModel);
 mixedViewBtn.addEventListener("click", showMixedView);
+surfaceAnchorBtn.addEventListener("click", startSurfaceAnchorMode);
 closeViewerBtn.addEventListener("click", hideScreenModel);
 overlay.addEventListener("click", e=>{
   if(e.target === overlay){
@@ -640,6 +732,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
 
   setStatus(`Lade ${file.name} …`);
   overlay.classList.add("active");
+  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder Oberflächenverankerung.");
 
   if(currentObjectURL){
     URL.revokeObjectURL(currentObjectURL);
@@ -655,6 +748,8 @@ document.getElementById("fileInput").addEventListener("change", e=>{
         scene.remove(model);
       }
 
+      clearPlacedSurfaceModel();
+
       const oldMixed = scene.getObjectByName("mixedModelRoot");
       if(oldMixed){
         scene.remove(oldMixed);
@@ -664,6 +759,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
       model.visible = false;
       scene.add(model);
 
+      surfacePlaced = false;
       rebuildScreenModel(true);
       if(mixedModeActive){
         rebuildMixedModel();
@@ -673,12 +769,18 @@ document.getElementById("fileInput").addEventListener("change", e=>{
     error=>{
       console.error("Fehler beim Laden des 3D-Modells", error);
       setStatus("Fehler beim Laden des Modells");
+      setARStatus("Modell konnte nicht geladen werden.");
       alert("Das 3D-Modell konnte nicht geladen werden.");
     }
   );
 });
 
 renderer.domElement.addEventListener("click", ()=>{
+  if(surfaceAnchorMode){
+    placeModelOnDetectedSurface();
+    return;
+  }
+
   if(mixedModeActive){
     return;
   }
@@ -704,6 +806,15 @@ scaleInput.addEventListener("input", e=>{
   if(mixedModeActive){
     rebuildMixedModel();
   }
+
+  if(surfacePlaced){
+    const anchored = scene.getObjectByName("surfaceAnchoredModel");
+    if(anchored){
+      anchored.scale.multiplyScalar(0 + 1);
+    }
+    clearPlacedSurfaceModel();
+    placeModelOnDetectedSurface();
+  }
 });
 
 rotationInput.addEventListener("input", e=>{
@@ -714,6 +825,13 @@ rotationInput.addEventListener("input", e=>{
 
   if(mixedModeActive){
     rebuildMixedModel();
+  }
+
+  if(surfacePlaced){
+    const anchored = scene.getObjectByName("surfaceAnchoredModel");
+    if(anchored){
+      anchored.rotation.y = THREE.MathUtils.degToRad(e.target.value);
+    }
   }
 });
 
@@ -727,6 +845,10 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   scaleInput.value = 1;
   rotationInput.value = 0;
 
+  clearPlacedSurfaceModel();
+  surfacePlaced = false;
+  surfaceAnchorMode = false;
+
   if(screenModel){
     rebuildScreenModel(overlay.classList.contains("active"));
   }
@@ -734,6 +856,8 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   if(mixedModeActive){
     rebuildMixedModel();
   }
+
+  setARStatus("Zurückgesetzt. Du kannst die Oberflächenverankerung neu starten.");
 });
 
 document.getElementById("iosBtn").addEventListener("click", ()=>{
@@ -760,6 +884,9 @@ renderer.setAnimationLoop((timestamp, frame)=>{
       session.addEventListener("end", ()=>{
         hitTestSourceRequested = false;
         hitTestSource = null;
+        reticle.visible = false;
+        surfaceAnchorMode = false;
+        setARStatus("AR-Sitzung beendet.");
       });
 
       hitTestSourceRequested = true;
@@ -773,12 +900,21 @@ renderer.setAnimationLoop((timestamp, frame)=>{
         const pose = hit.getPose(referenceSpace);
         reticle.visible = true;
         reticle.matrix.fromArray(pose.transform.matrix);
+
+        if(surfaceAnchorMode && !surfacePlaced){
+          setARStatus("Oberfläche erkannt. Tippe jetzt ins Bild, um das Modell dort zu verankern.");
+        }
       }else{
         reticle.visible = false;
+
+        if(surfaceAnchorMode && !surfacePlaced){
+          setARStatus("Suche Oberfläche … Bewege die Kamera langsam über Boden oder Tisch.");
+        }
       }
     }
   }
 
+  reticle.visible = surfaceAnchorMode && !surfacePlaced && reticle.visible;
   renderer.render(scene, camera);
 });
 
@@ -798,6 +934,7 @@ window.addEventListener("resize", ()=>{
 
 updateViewerSize();
 setStatus("Warte auf Modell …");
+setARStatus("Lade ein Modell und starte dann die Oberflächenverankerung.");
 
 </script>
 

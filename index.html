@@ -191,6 +191,9 @@ text-overflow:ellipsis;
 #arStatus{
 bottom:20px;
 z-index:950;
+max-width:92vw;
+white-space:normal;
+text-align:center;
 }
 
 @media (max-width: 640px){
@@ -345,6 +348,9 @@ let mixedModeActive = false;
 let cameraStream = null;
 let surfaceAnchorMode = false;
 let surfacePlaced = false;
+let lastSurfaceMatrix = null;
+const surfacePoints = [];
+const SURFACE_POINT_LIMIT = 120;
 
 const loader = new GLTFLoader();
 
@@ -393,6 +399,21 @@ viewerScene.add(viewerFillLight);
 const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
 viewerGrid.position.y = -0.001;
 viewerScene.add(viewerGrid);
+
+const scanGroup = new THREE.Group();
+scanGroup.name = "surfaceScanGroup";
+scene.add(scanGroup);
+
+const scanMaterial = new THREE.MeshBasicMaterial({
+  color:0x00d8ff,
+  transparent:true,
+  opacity:0.35,
+  side:THREE.DoubleSide
+});
+
+const scanPointMaterial = new THREE.MeshBasicMaterial({
+  color:0x00ff88
+});
 
 function setStatus(message){
   statusBox.textContent = message;
@@ -568,6 +589,46 @@ function clearPlacedSurfaceModel(){
   }
 }
 
+function clearSurfaceScan(){
+  while(scanGroup.children.length){
+    const child = scanGroup.children.pop();
+    if(child.geometry) child.geometry.dispose();
+    if(child.material) child.material.dispose?.();
+  }
+  surfacePoints.length = 0;
+  lastSurfaceMatrix = null;
+}
+
+function addSurfaceSampleFromMatrix(matrix){
+  const pos = new THREE.Vector3().setFromMatrixPosition(matrix);
+
+  const last = surfacePoints[surfacePoints.length - 1];
+  if(last && last.distanceTo(pos) < 0.03){
+    return;
+  }
+
+  surfacePoints.push(pos.clone());
+  if(surfacePoints.length > SURFACE_POINT_LIMIT){
+    surfacePoints.shift();
+  }
+
+  const marker = new THREE.Mesh(
+    new THREE.CircleGeometry(0.018, 20).rotateX(-Math.PI / 2),
+    scanPointMaterial.clone()
+  );
+  marker.position.copy(pos);
+  scanGroup.add(marker);
+
+  if(surfacePoints.length >= 3){
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.09, 0.13, 40).rotateX(-Math.PI / 2),
+      scanMaterial.clone()
+    );
+    ring.position.copy(pos);
+    scanGroup.add(ring);
+  }
+}
+
 function placeModelOnDetectedSurface(){
   if(!model || !reticle.visible){
     setARStatus("Noch keine Oberfläche erkannt. Bewege die Kamera langsam über Boden oder Tisch.");
@@ -599,7 +660,7 @@ function placeModelOnDetectedSurface(){
   scene.add(anchoredModel);
   surfacePlaced = true;
   surfaceAnchorMode = false;
-  setARStatus("Oberfläche erkannt und Modell verankert. Du kannst jetzt mit der Kamera darum herumgehen.");
+  setARStatus("Oberfläche gescannt und Modell verankert. Du kannst jetzt mit der Kamera um das Objekt gehen.");
 }
 
 function rebuildMixedModel(){
@@ -678,13 +739,14 @@ async function startSurfaceAnchorMode(){
   surfaceAnchorMode = true;
   overlay.classList.remove("active");
   clearPlacedSurfaceModel();
+  clearSurfaceScan();
 
   const existingMixed = scene.getObjectByName("mixedModelRoot");
   if(existingMixed){
     scene.remove(existingMixed);
   }
 
-  setARStatus("Suche Oberfläche … Bewege die Kamera langsam. Tippe dann ins Bild, um das Modell zu verankern.");
+  setARStatus("Scanne Oberfläche … Bewege die Kamera langsam. Die erkannten Flächen werden markiert. Tippe dann ins Bild, um das Modell zu verankern.");
 }
 
 function hideScreenModel(){
@@ -749,6 +811,7 @@ document.getElementById("fileInput").addEventListener("change", e=>{
       }
 
       clearPlacedSurfaceModel();
+      clearSurfaceScan();
 
       const oldMixed = scene.getObjectByName("mixedModelRoot");
       if(oldMixed){
@@ -807,12 +870,10 @@ scaleInput.addEventListener("input", e=>{
     rebuildMixedModel();
   }
 
-  if(surfacePlaced){
-    const anchored = scene.getObjectByName("surfaceAnchoredModel");
-    if(anchored){
-      anchored.scale.multiplyScalar(0 + 1);
-    }
+  if(surfacePlaced && lastSurfaceMatrix){
     clearPlacedSurfaceModel();
+    reticle.matrix.copy(lastSurfaceMatrix);
+    reticle.visible = true;
     placeModelOnDetectedSurface();
   }
 });
@@ -846,6 +907,7 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
   rotationInput.value = 0;
 
   clearPlacedSurfaceModel();
+  clearSurfaceScan();
   surfacePlaced = false;
   surfaceAnchorMode = false;
 
@@ -870,6 +932,8 @@ document.getElementById("iosBtn").addEventListener("click", ()=>{
 });
 
 renderer.setAnimationLoop((timestamp, frame)=>{
+  let hasSurface = false;
+
   if(frame){
     const session = renderer.xr.getSession();
     const referenceSpace = renderer.xr.getReferenceSpace();
@@ -886,6 +950,7 @@ renderer.setAnimationLoop((timestamp, frame)=>{
         hitTestSource = null;
         reticle.visible = false;
         surfaceAnchorMode = false;
+        clearSurfaceScan();
         setARStatus("AR-Sitzung beendet.");
       });
 
@@ -900,21 +965,27 @@ renderer.setAnimationLoop((timestamp, frame)=>{
         const pose = hit.getPose(referenceSpace);
         reticle.visible = true;
         reticle.matrix.fromArray(pose.transform.matrix);
+        hasSurface = true;
+        lastSurfaceMatrix = reticle.matrix.clone();
 
         if(surfaceAnchorMode && !surfacePlaced){
-          setARStatus("Oberfläche erkannt. Tippe jetzt ins Bild, um das Modell dort zu verankern.");
+          addSurfaceSampleFromMatrix(reticle.matrix);
+          setARStatus("Oberfläche erkannt und markiert. Tippe jetzt ins Bild, um das Modell dort zu verankern.");
         }
       }else{
         reticle.visible = false;
 
         if(surfaceAnchorMode && !surfacePlaced){
-          setARStatus("Suche Oberfläche … Bewege die Kamera langsam über Boden oder Tisch.");
+          setARStatus("Scanne Oberfläche … Bewege die Kamera langsam über Boden oder Tisch.");
         }
       }
     }
   }
 
-  reticle.visible = surfaceAnchorMode && !surfacePlaced && reticle.visible;
+  if(!surfaceAnchorMode || surfacePlaced || !hasSurface){
+    reticle.visible = false;
+  }
+
   renderer.render(scene, camera);
 });
 

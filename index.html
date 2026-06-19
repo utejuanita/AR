@@ -428,6 +428,7 @@ let markerTrackingActive = false;
 let markerLostFrames = 0;
 let markerLocked = false;
 let lastDetectedMarker = null;
+let baseModelScale = 1;
 const MARKER_LOST_LIMIT = 18;
 const MARKER_STABLE_FRAMES = 5;
 let stableMarkerFrames = 0;
@@ -486,41 +487,16 @@ const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
 viewerGrid.position.y = -0.001;
 viewerScene.add(viewerGrid);
 
-const markerFrameGroup = new THREE.Group();
-markerFrameGroup.visible = false;
-scene.add(markerFrameGroup);
-
-const markerBase = new THREE.Mesh(
-  new THREE.PlaneGeometry(1, 1),
-  new THREE.MeshBasicMaterial({
-    color:0x111111,
-    transparent:true,
-    opacity:0.28,
-    side:THREE.DoubleSide
-  })
-);
-markerBase.rotation.x = -Math.PI / 2;
-markerFrameGroup.add(markerBase);
-
-const markerInner = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.62, 0.62),
-  new THREE.MeshBasicMaterial({
-    color:0xffffff,
-    transparent:true,
-    opacity:0.92,
-    side:THREE.DoubleSide
-  })
-);
-markerInner.position.y = 0.002;
-markerInner.rotation.x = -Math.PI / 2;
-markerFrameGroup.add(markerInner);
+const markerGuideGroup = new THREE.Group();
+markerGuideGroup.visible = false;
+scene.add(markerGuideGroup);
 
 const markerEdge = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
   new THREE.LineBasicMaterial({ color:0xffffff })
 );
 markerEdge.rotation.x = -Math.PI / 2;
-markerFrameGroup.add(markerEdge);
+markerGuideGroup.add(markerEdge);
 
 const captureCanvas = document.createElement("canvas");
 const captureCtx = captureCanvas.getContext("2d", { willReadFrequently:true });
@@ -687,8 +663,9 @@ function rebuildScreenModel(autoOpen=false){
 
   ensureVisibleMaterials(screenModel);
   centerObjectAtGround(screenModel);
-  normalizeObjectSize(screenModel);
+  const normalizedScale = normalizeObjectSize(screenModel);
   centerObjectAtGround(screenModel);
+  baseModelScale = normalizedScale;
 
   const sliderScale = parseFloat(scaleInput.value || "1");
   screenModel.scale.multiplyScalar(sliderScale);
@@ -713,14 +690,14 @@ function clearPlacedSurfaceModel(){
 }
 
 function updateMarkerVisual(marker){
-  markerFrameGroup.visible = true;
-  markerFrameGroup.position.copy(marker.center);
-  markerFrameGroup.scale.set(marker.size, marker.size, marker.size);
-  markerFrameGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0);
+  markerGuideGroup.visible = true;
+  markerGuideGroup.position.copy(marker.center);
+  markerGuideGroup.scale.set(marker.size, marker.size, marker.size);
+  markerGuideGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0);
 }
 
 function hideMarkerVisual(){
-  markerFrameGroup.visible = false;
+  markerGuideGroup.visible = false;
 }
 
 function estimateMarkerFromFrame(){
@@ -843,7 +820,7 @@ function placeModelOnMarker(marker){
   }
 
   const sliderScale = parseFloat(scaleInput.value || "1");
-  anchoredModel.scale.setScalar(sliderScale * 0.7);
+  anchoredModel.scale.setScalar(baseModelScale * sliderScale);
   anchoredModel.position.copy(marker.center);
   anchoredModel.position.y += 0.01;
   anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
@@ -851,7 +828,7 @@ function placeModelOnMarker(marker){
   surfacePlaced = true;
   markerLocked = true;
   lastDetectedMarker = marker;
-  setARStatus("Marker erkannt. Das Modell ist jetzt auf dem Marker fixiert.");
+  setARStatus("Marker erkannt. Das Modell ist jetzt auf der weißen Markerfläche fixiert.");
 }
 
 function rebuildMixedModel(){
@@ -940,7 +917,7 @@ async function startSurfaceAnchorMode(){
     scene.remove(existingMixed);
   }
 
-  setARStatus("Halte den Marker mit schwarzem Rand und weißer Mitte flach auf den Boden. Das Modell wird nach stabiler Erkennung platziert.");
+  setARStatus("Halte den Marker mit schwarzem Rand und weißer Mitte flach auf den Boden. Das Modell wird nach stabiler Erkennung auf der weißen Fläche verankert.");
 }
 
 function hideScreenModel(){
@@ -1162,7 +1139,7 @@ function renderMarkerTracking(){
       updateMarkerVisual(detectedMarker);
 
       if(stableMarkerFrames >= MARKER_STABLE_FRAMES){
-        setARStatus("Marker stabil erkannt. Modell wird jetzt auf dem Marker fixiert.");
+        setARStatus("Marker stabil erkannt. Modell wird jetzt auf der weißen Fläche fixiert.");
         placeModelOnMarker(detectedMarker);
       }else{
         setARStatus(`Marker erkannt. Halte ruhig … ${stableMarkerFrames}/${MARKER_STABLE_FRAMES}`);

@@ -428,7 +428,7 @@ let markerTrackingActive = false;
 let markerLostFrames = 0;
 let markerLocked = false;
 let lastDetectedMarker = null;
-let baseModelScale = 1;
+const MARKER_SCALE_MULTIPLIER = 10;
 const MARKER_LOST_LIMIT = 18;
 const MARKER_STABLE_FRAMES = 5;
 let stableMarkerFrames = 0;
@@ -663,9 +663,8 @@ function rebuildScreenModel(autoOpen=false){
 
   ensureVisibleMaterials(screenModel);
   centerObjectAtGround(screenModel);
-  const normalizedScale = normalizeObjectSize(screenModel);
+  normalizeObjectSize(screenModel);
   centerObjectAtGround(screenModel);
-  baseModelScale = normalizedScale;
 
   const sliderScale = parseFloat(scaleInput.value || "1");
   screenModel.scale.multiplyScalar(sliderScale);
@@ -820,7 +819,7 @@ function placeModelOnMarker(marker){
   }
 
   const sliderScale = parseFloat(scaleInput.value || "1");
-  anchoredModel.scale.setScalar(sliderScale);
+  anchoredModel.scale.setScalar(sliderScale * MARKER_SCALE_MULTIPLIER);
   anchoredModel.position.copy(marker.center);
   anchoredModel.position.y += 0.01;
   anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
@@ -828,7 +827,7 @@ function placeModelOnMarker(marker){
   surfacePlaced = true;
   markerLocked = true;
   lastDetectedMarker = marker;
-  setARStatus("Marker erkannt. Das Modell ist jetzt auf der weißen Markerfläche fixiert.");
+  setARStatus("Marker erkannt. Das Modell ist jetzt 1000% größer auf der weißen Markerfläche fixiert.");
 }
 
 function rebuildMixedModel(){

@@ -101,6 +101,8 @@ let anchorLockedByTap = false;
 let placementPreviewVisible = false;
 let lastDetectedMarker = null;
 let placementPreviewMarker = null;
+let worldAnchorPoint = null;
+let worldAnchorRotation = 0;
 const MARKER_SCALE_MULTIPLIER = 10;
 const MARKER_LOST_LIMIT = 18;
 const MARKER_STABLE_FRAMES = 5;
@@ -189,7 +191,7 @@ function ensureVisibleMaterials(root){ root.traverse(node=>{ if(!node.isMesh) re
 function fitCameraToObject(object){ object.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(object); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z) || 1; const fov = viewerCamera.fov * (Math.PI / 180); let cameraZ = Math.abs((maxDim / 2) / Math.tan(fov / 2)); cameraZ *= 2.4; viewerCamera.position.set(center.x, center.y + maxDim * 0.7, center.z + cameraZ); viewerCamera.near = Math.max(0.001, maxDim / 1000); viewerCamera.far = Math.max(2000, maxDim * 50); viewerCamera.updateProjectionMatrix(); controls.target.copy(center); controls.minDistance = Math.max(0.05, maxDim * 0.25); controls.maxDistance = Math.max(10, maxDim * 12); controls.update(); setStatus(`Modell geladen · Größe ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`); }
 function syncScreenModelTransform(){ if(screenModel && model) screenModel.rotation.copy(model.rotation); }
 function rebuildScreenModel(autoOpen=false){ if(!model) return; if(screenModel) viewerScene.remove(screenModel); screenModel = model.clone(true); screenModel.visible = true; screenModel.position.set(0,0,0); screenModel.rotation.set(0,0,0); screenModel.scale.set(1,1,1); ensureVisibleMaterials(screenModel); centerObjectAtGround(screenModel); normalizeObjectSize(screenModel); centerObjectAtGround(screenModel); const sliderScale = parseFloat(scaleInput.value || "1"); screenModel.scale.multiplyScalar(sliderScale); syncScreenModelTransform(); viewerScene.add(screenModel); fitCameraToObject(screenModel); updateViewerSize(); if(autoOpen) overlay.classList.add("active"); }
-function clearPlacedSurfaceModel(){ const existing = scene.getObjectByName("surfaceAnchoredModel"); if(existing) scene.remove(existing); surfacePlaced = false; markerLocked = false; anchorLockedByTap = false; placementPreviewVisible = false; placementPreviewMarker = null; }
+function clearPlacedSurfaceModel(){ const existing = scene.getObjectByName("surfaceAnchoredModel"); if(existing) scene.remove(existing); surfacePlaced = false; markerLocked = false; anchorLockedByTap = false; placementPreviewVisible = false; placementPreviewMarker = null; worldAnchorPoint = null; worldAnchorRotation = 0; }
 function updateMarkerVisual(marker){ markerGuideGroup.visible = !anchorLockedByTap; markerGuideGroup.position.copy(marker.center); markerGuideGroup.scale.set(marker.size, marker.size, marker.size); markerGuideGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0); }
 function hideMarkerVisual(){ markerGuideGroup.visible = false; }
 
@@ -239,6 +241,14 @@ function estimateMarkerFromFrame(){
 
 function getAnchoredModel(){ return scene.getObjectByName("surfaceAnchoredModel"); }
 
+function positionModelAtAnchor(anchoredModel, anchorPoint, anchorRotation){
+  const sliderScale = parseFloat(scaleInput.value || "1");
+  anchoredModel.scale.setScalar(sliderScale * MARKER_SCALE_MULTIPLIER);
+  anchoredModel.position.copy(anchorPoint);
+  anchoredModel.position.y += 0.001;
+  anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + anchorRotation, 0);
+}
+
 function placeModelOnMarker(marker, { lock=false } = {}){
   if(!model || !marker){ setARStatus("Kein Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte."); return; }
   let anchoredModel = getAnchoredModel();
@@ -255,49 +265,53 @@ function placeModelOnMarker(marker, { lock=false } = {}){
     centerObjectAtGround(anchoredModel);
     scene.add(anchoredModel);
   }
-  const sliderScale = parseFloat(scaleInput.value || "1");
-  anchoredModel.scale.setScalar(sliderScale * MARKER_SCALE_MULTIPLIER);
-  anchoredModel.position.copy(marker.center);
-  anchoredModel.position.y += 0.01;
-  anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
+
+  const anchorPoint = lock && worldAnchorPoint ? worldAnchorPoint.clone() : marker.center.clone();
+  const anchorRotation = lock ? worldAnchorRotation : (marker.angle || 0);
+  positionModelAtAnchor(anchoredModel, anchorPoint, anchorRotation);
   anchoredModel.userData.isPlacementPreview = !lock;
   anchoredModel.userData.isAnchorLocked = !!lock;
   placementPreviewVisible = !lock;
   placementPreviewMarker = marker;
   lastDetectedMarker = marker;
+
   if(lock){
+    worldAnchorPoint = anchorPoint.clone();
+    worldAnchorRotation = anchorRotation;
     surfacePlaced = true;
     markerLocked = true;
     anchorLockedByTap = true;
     markerTrackingActive = false;
     hideMarkerVisual();
-    setARStatus("Modell fixiert. Du kannst die Kamera jetzt 360° um das Objekt bewegen.");
+    setARStatus("Modell fixiert. Die untere Spitze bleibt auf der weißen Markerfläche und du kannst dich 360° darum bewegen.");
   }else{
     surfacePlaced = false;
     markerLocked = false;
     anchorLockedByTap = false;
-    setARStatus("Marker erkannt. Tippe auf das 3D-Modell, um es dort fest zu verankern.");
+    setARStatus("Marker erkannt. Tippe auf das 3D-Modell, um es mit der unteren Spitze auf der weißen Fläche fest zu verankern.");
   }
 }
 
 function tryLockModelFromPointer(clientX, clientY){
   if(anchorLockedByTap) return false;
   const anchoredModel = getAnchoredModel();
-  if(!anchoredModel || !placementPreviewVisible) return false;
+  if(!anchoredModel || !placementPreviewVisible || !placementPreviewMarker) return false;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const intersects = raycaster.intersectObject(anchoredModel, true);
   if(!intersects.length) return false;
-  placeModelOnMarker(placementPreviewMarker || lastDetectedMarker, { lock:true });
+  worldAnchorPoint = placementPreviewMarker.center.clone();
+  worldAnchorRotation = placementPreviewMarker.angle || 0;
+  placeModelOnMarker(placementPreviewMarker, { lock:true });
   return true;
 }
 
 function rebuildMixedModel(){ if(!model || surfacePlaced) return; const existing = scene.getObjectByName("mixedModelRoot"); if(existing) scene.remove(existing); const mixedModel = model.clone(true); mixedModel.name = "mixedModelRoot"; mixedModel.visible = true; mixedModel.position.set(0, -0.4, -1.8); mixedModel.rotation.set(0, 0, 0); mixedModel.scale.set(1, 1, 1); ensureVisibleMaterials(mixedModel); centerObjectAtGround(mixedModel); normalizeObjectSize(mixedModel); centerObjectAtGround(mixedModel); const sliderScale = parseFloat(scaleInput.value || "1"); mixedModel.scale.multiplyScalar(sliderScale); mixedModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0); scene.add(mixedModel); }
 function showScreenModel(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } mixedModeActive = false; markerTrackingActive = false; rebuildScreenModel(true); }
 async function showMixedView(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } const ok = await startCameraFeed(); if(!ok) return; mixedModeActive = true; markerTrackingActive = false; overlay.classList.remove("active"); if(!surfacePlaced) rebuildMixedModel(); hideMarkerVisual(); setARStatus("Kamerabild mit 3D-Modell aktiv"); }
-async function startSurfaceAnchorMode(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } const ok = await startCameraFeed(); if(!ok) return; mixedModeActive = false; markerTrackingActive = true; markerLocked = false; anchorLockedByTap = false; markerLostFrames = 0; stableMarkerFrames = 0; lastDetectedMarker = null; placementPreviewMarker = null; overlay.classList.remove("active"); clearPlacedSurfaceModel(); const existingMixed = scene.getObjectByName("mixedModelRoot"); if(existingMixed) scene.remove(existingMixed); setARStatus("Halte den Marker flach auf den Boden. Nach der Erkennung tippe auf das 3D-Modell, um es fest zu verankern."); }
+async function startSurfaceAnchorMode(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } const ok = await startCameraFeed(); if(!ok) return; mixedModeActive = false; markerTrackingActive = true; markerLocked = false; anchorLockedByTap = false; markerLostFrames = 0; stableMarkerFrames = 0; lastDetectedMarker = null; placementPreviewMarker = null; worldAnchorPoint = null; worldAnchorRotation = 0; overlay.classList.remove("active"); clearPlacedSurfaceModel(); const existingMixed = scene.getObjectByName("mixedModelRoot"); if(existingMixed) scene.remove(existingMixed); setARStatus("Halte den Marker flach auf den Boden. Nach der Erkennung tippe auf das 3D-Modell, damit es mit der unteren Spitze auf der weißen Fläche stehen bleibt."); }
 function hideScreenModel(){ overlay.classList.remove("active"); }
 function closePhotoPreview(){ photoPreviewOverlay.classList.remove("active"); }
 function buildPhotoFilename(){ return `ar-foto-${new Date().toISOString().replace(/[:.]/g, "-")}.png`; }
@@ -360,8 +374,8 @@ document.getElementById("fileInput").addEventListener("change", e=>{
   }, undefined, error=>{ console.error(error); setStatus("Fehler beim Laden des Modells"); setARStatus("Modell konnte nicht geladen werden."); alert("Das 3D-Modell konnte nicht geladen werden."); });
 });
 
-scaleInput.addEventListener("input", e=>{ if(!model) return; const s = parseFloat(e.target.value); model.scale.set(s,s,s); if(screenModel) rebuildScreenModel(overlay.classList.contains("active")); if(mixedModeActive) rebuildMixedModel(); if((surfacePlaced || placementPreviewVisible) && lastDetectedMarker) placeModelOnMarker(lastDetectedMarker, { lock:anchorLockedByTap }); });
-rotationInput.addEventListener("input", e=>{ if(!model) return; model.rotation.y = THREE.MathUtils.degToRad(e.target.value); syncScreenModelTransform(); if(mixedModeActive) rebuildMixedModel(); if((surfacePlaced || placementPreviewVisible) && lastDetectedMarker) placeModelOnMarker(lastDetectedMarker, { lock:anchorLockedByTap }); });
+scaleInput.addEventListener("input", e=>{ if(!model) return; const s = parseFloat(e.target.value); model.scale.set(s,s,s); if(screenModel) rebuildScreenModel(overlay.classList.contains("active")); if(mixedModeActive) rebuildMixedModel(); if(anchorLockedByTap && worldAnchorPoint){ const anchoredModel = getAnchoredModel(); if(anchoredModel) positionModelAtAnchor(anchoredModel, worldAnchorPoint, worldAnchorRotation); } else if((surfacePlaced || placementPreviewVisible) && lastDetectedMarker){ placeModelOnMarker(lastDetectedMarker, { lock:false }); } });
+rotationInput.addEventListener("input", e=>{ if(!model) return; model.rotation.y = THREE.MathUtils.degToRad(e.target.value); syncScreenModelTransform(); if(mixedModeActive) rebuildMixedModel(); if(anchorLockedByTap && worldAnchorPoint){ const anchoredModel = getAnchoredModel(); if(anchoredModel) positionModelAtAnchor(anchoredModel, worldAnchorPoint, worldAnchorRotation); } else if((surfacePlaced || placementPreviewVisible) && lastDetectedMarker){ placeModelOnMarker(lastDetectedMarker, { lock:false }); } });
 document.getElementById("resetBtn").addEventListener("click", ()=>{ if(!model) return; model.position.set(0,0,0); model.rotation.set(0,0,0); model.scale.set(1,1,1); scaleInput.value = 1; rotationInput.value = 0; clearPlacedSurfaceModel(); hideMarkerVisual(); markerTrackingActive = false; markerLocked = false; anchorLockedByTap = false; lastDetectedMarker = null; placementPreviewMarker = null; stableMarkerFrames = 0; if(screenModel) rebuildScreenModel(overlay.classList.contains("active")); if(mixedModeActive) rebuildMixedModel(); setARStatus("Zurückgesetzt. Du kannst die Marker-Platzierung neu starten."); });
 
 function renderMarkerTracking(){

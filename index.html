@@ -6,411 +6,80 @@
 <title>Universal AR Viewer</title>
 
 <style>
-html,body{
-margin:0;
-width:100%;
-height:100%;
-overflow:hidden;
-background:#000;
-font-family:Arial,sans-serif;
-}
-
-body{
-position:relative;
-}
-
-#cameraFeed,
-#xrCanvas{
-position:fixed;
-inset:0;
-width:100%;
-height:100%;
-object-fit:cover;
-}
-
-#cameraFeed{
-z-index:0;
-background:#000;
-}
-
-#xrCanvas{
-z-index:1;
-pointer-events:auto;
-}
-
-#ui{
-position:absolute;
-top:10px;
-left:10px;
-z-index:1000;
-width:min(250px, calc(100vw - 20px));
-background:rgba(0,0,0,.72);
-padding:10px;
-border-radius:14px;
-color:white;
-backdrop-filter:blur(8px);
-box-sizing:border-box;
-transition:transform .25s ease, opacity .25s ease, width .25s ease;
-transform:translateX(0);
-}
-
-#ui.collapsed{
-transform:translateX(calc(-100% + 46px));
-}
-
-#toggleUiBtn{
-position:absolute;
-top:10px;
-right:10px;
-width:28px;
-height:28px;
-padding:0;
-margin:0;
-border-radius:999px;
-border:1px solid rgba(255,255,255,.2);
-background:#00f0f0;
-color:#000000;
-font-size:18px;
-line-height:1;
-}
-
-#uiContent{
-padding-top:34px;
-}
-
-#ui.compact{
-width:min(220px, calc(100vw - 20px));
-}
-
-button{
-padding:8px 12px;
-margin:4px;
-cursor:pointer;
-background:#00f0f0;
-color:#000000;
-border:none;
-border-radius:8px;
-font-weight:600;
-}
-
-#photoBtnFloating{
-position:fixed;
-right:16px;
-bottom:calc(16px + env(safe-area-inset-bottom, 0px));
-z-index:1100;
-padding:12px 16px;
-border-radius:999px;
-box-shadow:0 10px 24px rgba(0,0,0,.28);
-}
-
-input[type=range]{
-width:160px;
-max-width:100%;
-accent-color:#00f0f0;
-}
-
-canvas{
-display:block;
-}
-
-#viewerOverlay,
-#photoPreviewOverlay{
-position:absolute;
-inset:0;
-display:flex;
-align-items:center;
-justify-content:center;
-background:radial-gradient(circle at center, rgba(30,30,30,.15), rgba(0,0,0,.45));
-z-index:900;
-pointer-events:none;
-opacity:0;
-transition:opacity .25s ease;
-}
-
-#viewerOverlay.active,
-#photoPreviewOverlay.active{
-opacity:1;
-pointer-events:auto;
-}
-
-#viewerCard,
-#photoPreviewCard{
-width:min(94vw, 980px);
-height:min(84vh, 760px);
-background:rgba(17,17,17,.72);
-border:1px solid rgba(255,255,255,.12);
-border-radius:18px;
-box-shadow:0 20px 60px rgba(0,0,0,.45);
-overflow:hidden;
-display:flex;
-flex-direction:column;
-backdrop-filter:blur(10px);
-}
-
-#viewerHeader,
-#photoPreviewHeader{
-display:flex;
-align-items:center;
-justify-content:space-between;
-padding:12px 16px;
-background:rgba(255,255,255,.05);
-color:#fff;
-gap:12px;
-}
-
-#viewerHeader h2,
-#photoPreviewHeader h2{
-margin:0;
-font-size:16px;
-font-weight:600;
-}
-
-#closeViewerBtn,
-#savePhotoBtn,
-#closePhotoPreviewBtn{
-background:#00f0f0;
-color:#000000;
-border:none;
-border-radius:8px;
-}
-
-#viewerCanvasWrap,
-#photoPreviewBody{
-position:relative;
-flex:1;
-min-height:320px;
-}
-
-#viewerCanvasWrap canvas{
-width:100%;
-height:100%;
-display:block;
-}
-
-#photoPreviewBody{
-display:flex;
-align-items:center;
-justify-content:center;
-padding:12px;
-box-sizing:border-box;
-background:rgba(0,0,0,.35);
-}
-
-#photoPreviewImage{
-max-width:100%;
-max-height:100%;
-border-radius:12px;
-object-fit:contain;
-box-shadow:0 12px 30px rgba(0,0,0,.35);
-}
-
-#viewerHint,
-#statusBox,
-#arStatus,
-#photoStatus{
-position:absolute;
-left:50%;
-transform:translateX(-50%);
-background:rgba(0,0,0,.58);
-color:#fff;
-padding:8px 12px;
-border-radius:999px;
-font-size:13px;
-pointer-events:none;
-white-space:nowrap;
-}
-
-#viewerHint{
-bottom:14px;
-}
-
-#statusBox{
-top:14px;
-max-width:90%;
-overflow:hidden;
-text-overflow:ellipsis;
-}
-
-#arStatus{
-bottom:20px;
-z-index:950;
-max-width:92vw;
-white-space:normal;
-text-align:center;
-}
-
-#photoStatus{
-top:20px;
-z-index:960;
-opacity:0;
-transition:opacity .25s ease;
-}
-
-#photoStatus.visible{
-opacity:1;
-}
-
-@media (max-width: 640px){
-  #ui{
-    width:min(210px, calc(100vw - 20px));
-    padding:8px;
-    border-radius:12px;
-  }
-
-  #ui.collapsed{
-    transform:translateX(calc(-100% + 42px));
-  }
-
-  #uiContent{
-    padding-top:30px;
-    font-size:14px;
-  }
-
-  button{
-    padding:7px 10px;
-    margin:3px;
-    font-size:13px;
-  }
-
-  #photoBtnFloating{
-    right:12px;
-    bottom:calc(12px + env(safe-area-inset-bottom, 0px));
-    padding:11px 14px;
-    font-size:13px;
-  }
-
-  #photoPreviewHeader{
-    flex-wrap:wrap;
-  }
-
-  input[type=range]{
-    width:140px;
-  }
-}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial,sans-serif;}
+body{position:relative;}
+#cameraFeed,#xrCanvas{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;}
+#cameraFeed{z-index:0;background:#000;}
+#xrCanvas{z-index:1;pointer-events:auto;}
+#ui{position:absolute;top:10px;left:10px;z-index:1000;width:min(250px, calc(100vw - 20px));background:rgba(0,0,0,.72);padding:10px;border-radius:14px;color:white;backdrop-filter:blur(8px);box-sizing:border-box;transition:transform .25s ease, opacity .25s ease, width .25s ease;transform:translateX(0);}
+#ui.collapsed{transform:translateX(calc(-100% + 46px));}
+#toggleUiBtn{position:absolute;top:10px;right:10px;width:28px;height:28px;padding:0;margin:0;border-radius:999px;border:1px solid rgba(255,255,255,.2);background:#00f0f0;color:#000;font-size:18px;line-height:1;}
+#uiContent{padding-top:34px;}
+#ui.compact{width:min(220px, calc(100vw - 20px));}
+button{padding:8px 12px;margin:4px;cursor:pointer;background:#00f0f0;color:#000;border:none;border-radius:8px;font-weight:600;}
+#photoBtnFloating{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom, 0px));z-index:1100;padding:12px 16px;border-radius:999px;box-shadow:0 10px 24px rgba(0,0,0,.28);}
+input[type=range]{width:160px;max-width:100%;accent-color:#00f0f0;}
+canvas{display:block;}
+#viewerOverlay,#photoPreviewOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at center, rgba(30,30,30,.15), rgba(0,0,0,.45));z-index:900;pointer-events:none;opacity:0;transition:opacity .25s ease;}
+#viewerOverlay.active,#photoPreviewOverlay.active{opacity:1;pointer-events:auto;}
+#viewerCard,#photoPreviewCard{width:min(94vw, 980px);height:min(84vh, 760px);background:rgba(17,17,17,.72);border:1px solid rgba(255,255,255,.12);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.45);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(10px);}
+#viewerHeader,#photoPreviewHeader{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,.05);color:#fff;gap:12px;}
+#viewerHeader h2,#photoPreviewHeader h2{margin:0;font-size:16px;font-weight:600;}
+#closeViewerBtn,#savePhotoBtn,#closePhotoPreviewBtn{background:#00f0f0;color:#000;border:none;border-radius:8px;}
+#viewerCanvasWrap,#photoPreviewBody{position:relative;flex:1;min-height:320px;}
+#viewerCanvasWrap canvas{width:100%;height:100%;display:block;}
+#photoPreviewBody{display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;background:rgba(0,0,0,.35);}
+#photoPreviewImage{max-width:100%;max-height:100%;border-radius:12px;object-fit:contain;box-shadow:0 12px 30px rgba(0,0,0,.35);}
+#viewerHint,#statusBox,#arStatus,#photoStatus{position:absolute;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.58);color:#fff;padding:8px 12px;border-radius:999px;font-size:13px;pointer-events:none;white-space:nowrap;}
+#viewerHint{bottom:14px;}
+#statusBox{top:14px;max-width:90%;overflow:hidden;text-overflow:ellipsis;}
+#arStatus{bottom:20px;z-index:950;max-width:92vw;white-space:normal;text-align:center;}
+#photoStatus{top:20px;z-index:960;opacity:0;transition:opacity .25s ease;}
+#photoStatus.visible{opacity:1;}
+@media (max-width: 640px){#ui{width:min(210px, calc(100vw - 20px));padding:8px;border-radius:12px;}#ui.collapsed{transform:translateX(calc(-100% + 42px));}#uiContent{padding-top:30px;font-size:14px;}button{padding:7px 10px;margin:3px;font-size:13px;}#photoBtnFloating{right:12px;bottom:calc(12px + env(safe-area-inset-bottom, 0px));padding:11px 14px;font-size:13px;}#photoPreviewHeader{flex-wrap:wrap;}input[type=range]{width:140px;}}
 </style>
 </head>
 <body>
-
 <video id="cameraFeed" autoplay playsinline muted></video>
-
 <div id="ui" class="compact">
   <button id="toggleUiBtn" aria-label="Menü einklappen">‹</button>
   <div id="uiContent">
-
-    <input type="file"
-           id="fileInput"
-           accept=".glb,.gltf">
-
+    <input type="file" id="fileInput" accept=".glb,.gltf">
     <br><br>
-
-    <button id="screenViewBtn">
-    3D Ansicht
-    </button>
-
-    <button id="mixedViewBtn">
-    Kamera + 3D
-    </button>
-
-    <button id="surfaceAnchorBtn">
-    Auf Marker platzieren
-    </button>
-
+    <button id="screenViewBtn">3D Ansicht</button>
+    <button id="mixedViewBtn">Kamera + 3D</button>
+    <button id="surfaceAnchorBtn">Auf Marker platzieren</button>
     <br><br>
-
     <label>Skalierung</label><br>
-    <input type="range"
-           id="scale"
-           min="0.1"
-           max="5"
-           step="0.1"
-           value="1">
-
+    <input type="range" id="scale" min="0.1" max="5" step="0.1" value="1">
     <br><br>
-
     <label>Rotation</label><br>
-    <input type="range"
-           id="rotation"
-           min="0"
-           max="360"
-           value="0">
-
+    <input type="range" id="rotation" min="0" max="360" value="0">
     <br><br>
-
-    <button id="resetBtn">
-    Reset
-    </button>
+    <button id="resetBtn">Reset</button>
   </div>
 </div>
-
 <button id="photoBtnFloating">Foto erstellen</button>
-
 <div id="arStatus">Lade ein Modell und halte dann einen Marker mit schwarzem Rand und weißer Mitte auf den Boden.</div>
 <div id="photoStatus">Foto gespeichert</div>
-
-<div id="viewerOverlay">
-  <div id="viewerCard">
-    <div id="viewerHeader">
-      <h2>3D Objektansicht</h2>
-      <button id="closeViewerBtn">Schließen</button>
-    </div>
-    <div id="viewerCanvasWrap">
-      <div id="statusBox">Warte auf Modell …</div>
-      <div id="viewerHint">Ziehen zum Drehen · Pinch zum Zoomen</div>
-    </div>
-  </div>
-</div>
-
-<div id="photoPreviewOverlay">
-  <div id="photoPreviewCard">
-    <div id="photoPreviewHeader">
-      <h2>Foto-Vorschau</h2>
-      <div>
-        <button id="savePhotoBtn">In Downloads sichern</button>
-        <button id="closePhotoPreviewBtn">Schließen</button>
-      </div>
-    </div>
-    <div id="photoPreviewBody">
-      <img id="photoPreviewImage" alt="Foto Vorschau">
-    </div>
-  </div>
-</div>
-
-<script type="importmap">
-{
- "imports": {
-  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
- }
-}
-</script>
-
+<div id="viewerOverlay"><div id="viewerCard"><div id="viewerHeader"><h2>3D Objektansicht</h2><button id="closeViewerBtn">Schließen</button></div><div id="viewerCanvasWrap"><div id="statusBox">Warte auf Modell …</div><div id="viewerHint">Ziehen zum Drehen · Pinch zum Zoomen</div></div></div></div>
+<div id="photoPreviewOverlay"><div id="photoPreviewCard"><div id="photoPreviewHeader"><h2>Foto-Vorschau</h2><div><button id="savePhotoBtn">In Downloads sichern</button><button id="closePhotoPreviewBtn">Schließen</button></div></div><div id="photoPreviewBody"><img id="photoPreviewImage" alt="Foto Vorschau"></div></div></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
-
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const scene = new THREE.Scene();
-
-const camera = new THREE.PerspectiveCamera(
-70,
-window.innerWidth / window.innerHeight,
-0.01,
-100
-);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
 camera.position.set(0, 0, 2.8);
 scene.add(camera);
 
-const renderer = new THREE.WebGLRenderer({
-antialias:true,
-alpha:true,
-preserveDrawingBuffer:true
-});
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.domElement.id = "xrCanvas";
 document.body.appendChild(renderer.domElement);
-
 scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.2));
 const dir = new THREE.DirectionalLight(0xffffff, 2.4);
 dir.position.set(3, 5, 2);
@@ -424,6 +93,7 @@ let cameraStream = null;
 let surfacePlaced = false;
 let photoStatusTimer = null;
 let latestPhotoDataURL = null;
+let latestPhotoBlob = null;
 let markerTrackingActive = false;
 let markerLostFrames = 0;
 let markerLocked = false;
@@ -434,7 +104,6 @@ const MARKER_STABLE_FRAMES = 5;
 let stableMarkerFrames = 0;
 
 const loader = new GLTFLoader();
-
 const overlay = document.getElementById("viewerOverlay");
 const viewerCanvasWrap = document.getElementById("viewerCanvasWrap");
 const screenViewBtn = document.getElementById("screenViewBtn");
@@ -456,25 +125,16 @@ const savePhotoBtn = document.getElementById("savePhotoBtn");
 const closePhotoPreviewBtn = document.getElementById("closePhotoPreviewBtn");
 
 const viewerScene = new THREE.Scene();
-viewerScene.background = null;
-
 const viewerCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
 viewerCamera.position.set(0, 1, 3);
-
-const viewerRenderer = new THREE.WebGLRenderer({
-antialias:true,
-alpha:true,
-preserveDrawingBuffer:true
-});
+const viewerRenderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
 viewerRenderer.setClearColor(0x000000, 0);
 viewerRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 viewerCanvasWrap.appendChild(viewerRenderer.domElement);
-
 const controls = new OrbitControls(viewerCamera, viewerRenderer.domElement);
 controls.enableDamping = true;
 controls.enablePan = false;
 controls.target.set(0, 0.5, 0);
-
 viewerScene.add(new THREE.AmbientLight(0xffffff, 2.4));
 const viewerDirLight = new THREE.DirectionalLight(0xffffff, 2.5);
 viewerDirLight.position.set(3, 4, 5);
@@ -482,69 +142,33 @@ viewerScene.add(viewerDirLight);
 const viewerFillLight = new THREE.DirectionalLight(0xffffff, 1.6);
 viewerFillLight.position.set(-4, 2, -2);
 viewerScene.add(viewerFillLight);
-
-const viewerGrid = new THREE.GridHelper(10, 10, 0x666666, 0x333333);
-viewerGrid.position.y = -0.001;
-viewerScene.add(viewerGrid);
+viewerScene.add(new THREE.GridHelper(10, 10, 0x666666, 0x333333));
 
 const markerGuideGroup = new THREE.Group();
 markerGuideGroup.visible = false;
 scene.add(markerGuideGroup);
-
-const markerEdge = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
-  new THREE.LineBasicMaterial({ color:0xffffff })
-);
+const markerEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)), new THREE.LineBasicMaterial({ color:0xffffff }));
 markerEdge.rotation.x = -Math.PI / 2;
 markerGuideGroup.add(markerEdge);
 
 const captureCanvas = document.createElement("canvas");
 const captureCtx = captureCanvas.getContext("2d", { willReadFrequently:true });
 
-function setStatus(message){
-  statusBox.textContent = message;
-}
-
-function setARStatus(message){
-  arStatus.textContent = message;
-}
-
-function showPhotoStatus(message){
-  photoStatus.textContent = message;
-  photoStatus.classList.add("visible");
-  if(photoStatusTimer){
-    clearTimeout(photoStatusTimer);
-  }
-  photoStatusTimer = setTimeout(()=>{
-    photoStatus.classList.remove("visible");
-  }, 2200);
-}
-
-function toggleUi(){
-  const collapsed = ui.classList.toggle("collapsed");
-  toggleUiBtn.textContent = collapsed ? "›" : "‹";
-  toggleUiBtn.setAttribute("aria-label", collapsed ? "Menü ausklappen" : "Menü einklappen");
-}
-
+function setStatus(message){ statusBox.textContent = message; }
+function setARStatus(message){ arStatus.textContent = message; }
+function showPhotoStatus(message){ photoStatus.textContent = message; photoStatus.classList.add("visible"); if(photoStatusTimer) clearTimeout(photoStatusTimer); photoStatusTimer = setTimeout(()=>photoStatus.classList.remove("visible"), 2200); }
+function toggleUi(){ const collapsed = ui.classList.toggle("collapsed"); toggleUiBtn.textContent = collapsed ? "›" : "‹"; toggleUiBtn.setAttribute("aria-label", collapsed ? "Menü ausklappen" : "Menü einklappen"); }
 toggleUiBtn.addEventListener("click", toggleUi);
 
 async function startCameraFeed(){
-  if(cameraStream){
-    return true;
-  }
-
+  if(cameraStream) return true;
   try{
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video:{
-        facingMode:{ ideal:"environment" }
-      },
-      audio:false
-    });
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false });
     cameraFeed.srcObject = cameraStream;
     await cameraFeed.play();
     return true;
   }catch(error){
-    console.error("Kamera konnte nicht gestartet werden", error);
+    console.error(error);
     setStatus("Kamera konnte nicht gestartet werden");
     setARStatus("Kein Kamerazugriff verfügbar.");
     alert("Kamerazugriff wurde nicht erlaubt oder ist nicht verfügbar.");
@@ -552,257 +176,65 @@ async function startCameraFeed(){
   }
 }
 
-function updateViewerSize(){
-  const rect = viewerCanvasWrap.getBoundingClientRect();
-  const width = Math.max(1, rect.width);
-  const height = Math.max(1, rect.height);
-  viewerCamera.aspect = width / height;
-  viewerCamera.updateProjectionMatrix();
-  viewerRenderer.setSize(width, height, false);
-}
-
-function centerObjectAtGround(object){
-  object.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(object);
-  const center = box.getCenter(new THREE.Vector3());
-  const minY = box.min.y;
-  object.position.x -= center.x;
-  object.position.y -= minY;
-  object.position.z -= center.z;
-  object.updateMatrixWorld(true);
-}
-
-function normalizeObjectSize(object){
-  object.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
-
-  if(!maxDim || !isFinite(maxDim)){
-    return 1;
-  }
-
-  const targetSize = 1.5;
-  const factor = targetSize / maxDim;
-  object.scale.multiplyScalar(factor);
-  object.updateMatrixWorld(true);
-  return factor;
-}
-
-function ensureVisibleMaterials(root){
-  root.traverse(node=>{
-    if(!node.isMesh) return;
-
-    if(Array.isArray(node.material)){
-      node.material = node.material.map(material => material || new THREE.MeshStandardMaterial({ color:0xcccccc }));
-      node.material.forEach(material => {
-        if("side" in material) material.side = THREE.DoubleSide;
-        material.transparent = material.opacity < 1;
-        material.needsUpdate = true;
-      });
-    }else{
-      if(!node.material){
-        node.material = new THREE.MeshStandardMaterial({ color:0xcccccc });
-      }
-      if("side" in node.material) node.material.side = THREE.DoubleSide;
-      node.material.transparent = node.material.opacity < 1;
-      node.material.needsUpdate = true;
-    }
-
-    if(node.geometry){
-      node.geometry.computeBoundingSphere();
-      node.geometry.computeVertexNormals();
-    }
-
-    node.frustumCulled = false;
-  });
-}
-
-function fitCameraToObject(object){
-  object.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  const fov = viewerCamera.fov * (Math.PI / 180);
-  let cameraZ = Math.abs((maxDim / 2) / Math.tan(fov / 2));
-  cameraZ *= 2.4;
-
-  viewerCamera.position.set(center.x, center.y + maxDim * 0.7, center.z + cameraZ);
-  viewerCamera.near = Math.max(0.001, maxDim / 1000);
-  viewerCamera.far = Math.max(2000, maxDim * 50);
-  viewerCamera.updateProjectionMatrix();
-
-  controls.target.copy(center);
-  controls.minDistance = Math.max(0.05, maxDim * 0.25);
-  controls.maxDistance = Math.max(10, maxDim * 12);
-  controls.update();
-
-  setStatus(`Modell geladen · Größe ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
-}
-
-function syncScreenModelTransform(){
-  if(!screenModel || !model) return;
-  screenModel.rotation.copy(model.rotation);
-}
-
-function rebuildScreenModel(autoOpen=false){
-  if(!model){
-    return;
-  }
-
-  if(screenModel){
-    viewerScene.remove(screenModel);
-  }
-
-  screenModel = model.clone(true);
-  screenModel.visible = true;
-  screenModel.position.set(0,0,0);
-  screenModel.rotation.set(0,0,0);
-  screenModel.scale.set(1,1,1);
-
-  ensureVisibleMaterials(screenModel);
-  centerObjectAtGround(screenModel);
-  normalizeObjectSize(screenModel);
-  centerObjectAtGround(screenModel);
-
-  const sliderScale = parseFloat(scaleInput.value || "1");
-  screenModel.scale.multiplyScalar(sliderScale);
-  syncScreenModelTransform();
-
-  viewerScene.add(screenModel);
-  fitCameraToObject(screenModel);
-  updateViewerSize();
-
-  if(autoOpen){
-    overlay.classList.add("active");
-  }
-}
-
-function clearPlacedSurfaceModel(){
-  const existing = scene.getObjectByName("surfaceAnchoredModel");
-  if(existing){
-    scene.remove(existing);
-  }
-  surfacePlaced = false;
-  markerLocked = false;
-}
-
-function updateMarkerVisual(marker){
-  markerGuideGroup.visible = true;
-  markerGuideGroup.position.copy(marker.center);
-  markerGuideGroup.scale.set(marker.size, marker.size, marker.size);
-  markerGuideGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0);
-}
-
-function hideMarkerVisual(){
-  markerGuideGroup.visible = false;
-}
+function updateViewerSize(){ const rect = viewerCanvasWrap.getBoundingClientRect(); const width = Math.max(1, rect.width); const height = Math.max(1, rect.height); viewerCamera.aspect = width / height; viewerCamera.updateProjectionMatrix(); viewerRenderer.setSize(width, height, false); }
+function centerObjectAtGround(object){ object.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(object); const center = box.getCenter(new THREE.Vector3()); const minY = box.min.y; object.position.x -= center.x; object.position.y -= minY; object.position.z -= center.z; object.updateMatrixWorld(true); }
+function normalizeObjectSize(object){ object.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(object); const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z); if(!maxDim || !isFinite(maxDim)) return 1; const factor = 1.5 / maxDim; object.scale.multiplyScalar(factor); object.updateMatrixWorld(true); return factor; }
+function ensureVisibleMaterials(root){ root.traverse(node=>{ if(!node.isMesh) return; if(Array.isArray(node.material)){ node.material = node.material.map(m=>m || new THREE.MeshStandardMaterial({ color:0xcccccc })); node.material.forEach(m=>{ if("side" in m) m.side = THREE.DoubleSide; m.transparent = m.opacity < 1; m.needsUpdate = true; }); } else { if(!node.material) node.material = new THREE.MeshStandardMaterial({ color:0xcccccc }); if("side" in node.material) node.material.side = THREE.DoubleSide; node.material.transparent = node.material.opacity < 1; node.material.needsUpdate = true; } if(node.geometry){ node.geometry.computeBoundingSphere(); node.geometry.computeVertexNormals(); } node.frustumCulled = false; }); }
+function fitCameraToObject(object){ object.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(object); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z) || 1; const fov = viewerCamera.fov * (Math.PI / 180); let cameraZ = Math.abs((maxDim / 2) / Math.tan(fov / 2)); cameraZ *= 2.4; viewerCamera.position.set(center.x, center.y + maxDim * 0.7, center.z + cameraZ); viewerCamera.near = Math.max(0.001, maxDim / 1000); viewerCamera.far = Math.max(2000, maxDim * 50); viewerCamera.updateProjectionMatrix(); controls.target.copy(center); controls.minDistance = Math.max(0.05, maxDim * 0.25); controls.maxDistance = Math.max(10, maxDim * 12); controls.update(); setStatus(`Modell geladen · Größe ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`); }
+function syncScreenModelTransform(){ if(screenModel && model) screenModel.rotation.copy(model.rotation); }
+function rebuildScreenModel(autoOpen=false){ if(!model) return; if(screenModel) viewerScene.remove(screenModel); screenModel = model.clone(true); screenModel.visible = true; screenModel.position.set(0,0,0); screenModel.rotation.set(0,0,0); screenModel.scale.set(1,1,1); ensureVisibleMaterials(screenModel); centerObjectAtGround(screenModel); normalizeObjectSize(screenModel); centerObjectAtGround(screenModel); const sliderScale = parseFloat(scaleInput.value || "1"); screenModel.scale.multiplyScalar(sliderScale); syncScreenModelTransform(); viewerScene.add(screenModel); fitCameraToObject(screenModel); updateViewerSize(); if(autoOpen) overlay.classList.add("active"); }
+function clearPlacedSurfaceModel(){ const existing = scene.getObjectByName("surfaceAnchoredModel"); if(existing) scene.remove(existing); surfacePlaced = false; markerLocked = false; }
+function updateMarkerVisual(marker){ markerGuideGroup.visible = true; markerGuideGroup.position.copy(marker.center); markerGuideGroup.scale.set(marker.size, marker.size, marker.size); markerGuideGroup.rotation.set(-Math.PI / 2, 0, marker.angle || 0); }
+function hideMarkerVisual(){ markerGuideGroup.visible = false; }
 
 function estimateMarkerFromFrame(){
-  if(!cameraFeed.videoWidth || !cameraFeed.videoHeight){
-    return null;
-  }
-
+  if(!cameraFeed.videoWidth || !cameraFeed.videoHeight) return null;
   const sampleWidth = 180;
   const sampleHeight = Math.max(110, Math.round(sampleWidth * cameraFeed.videoHeight / cameraFeed.videoWidth));
-  captureCanvas.width = sampleWidth;
-  captureCanvas.height = sampleHeight;
+  captureCanvas.width = sampleWidth; captureCanvas.height = sampleHeight;
   captureCtx.drawImage(cameraFeed, 0, 0, sampleWidth, sampleHeight);
-
   const imageData = captureCtx.getImageData(0, 0, sampleWidth, sampleHeight).data;
-  let minX = sampleWidth;
-  let minY = sampleHeight;
-  let maxX = -1;
-  let maxY = -1;
-  let whiteCount = 0;
-  let borderDarkCount = 0;
-  let borderSampleCount = 0;
-
+  let minX = sampleWidth, minY = sampleHeight, maxX = -1, maxY = -1, whiteCount = 0, borderDarkCount = 0, borderSampleCount = 0;
   for(let y = Math.floor(sampleHeight * 0.28); y < sampleHeight; y++){
     for(let x = 0; x < sampleWidth; x++){
       const index = (y * sampleWidth + x) * 4;
-      const r = imageData[index];
-      const g = imageData[index + 1];
-      const b = imageData[index + 2];
+      const r = imageData[index], g = imageData[index+1], b = imageData[index+2];
       const brightness = (r + g + b) / 3;
-      const spread = Math.max(r, g, b) - Math.min(r, g, b);
-      if(brightness > 210 && spread < 35){
-        whiteCount++;
-        if(x < minX) minX = x;
-        if(y < minY) minY = y;
-        if(x > maxX) maxX = x;
-        if(y > maxY) maxY = y;
-      }
+      const spread = Math.max(r,g,b) - Math.min(r,g,b);
+      if(brightness > 210 && spread < 35){ whiteCount++; if(x < minX) minX = x; if(y < minY) minY = y; if(x > maxX) maxX = x; if(y > maxY) maxY = y; }
     }
   }
-
-  if(whiteCount < 380 || maxX <= minX || maxY <= minY){
-    return null;
-  }
-
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const ratio = width / height;
-  if(ratio < 0.6 || ratio > 1.55){
-    return null;
-  }
-
+  if(whiteCount < 380 || maxX <= minX || maxY <= minY) return null;
+  const width = maxX - minX, height = maxY - minY, ratio = width / height;
+  if(ratio < 0.6 || ratio > 1.55) return null;
   const borderPadding = Math.max(4, Math.round(Math.min(width, height) * 0.18));
-  const outerMinX = Math.max(0, minX - borderPadding);
-  const outerMinY = Math.max(0, minY - borderPadding);
-  const outerMaxX = Math.min(sampleWidth - 1, maxX + borderPadding);
-  const outerMaxY = Math.min(sampleHeight - 1, maxY + borderPadding);
-
+  const outerMinX = Math.max(0, minX - borderPadding), outerMinY = Math.max(0, minY - borderPadding), outerMaxX = Math.min(sampleWidth - 1, maxX + borderPadding), outerMaxY = Math.min(sampleHeight - 1, maxY + borderPadding);
   for(let y = outerMinY; y <= outerMaxY; y++){
     for(let x = outerMinX; x <= outerMaxX; x++){
-      const insideInner = x >= minX && x <= maxX && y >= minY && y <= maxY;
-      if(insideInner) continue;
+      if(x >= minX && x <= maxX && y >= minY && y <= maxY) continue;
       const index = (y * sampleWidth + x) * 4;
-      const r = imageData[index];
-      const g = imageData[index + 1];
-      const b = imageData[index + 2];
-      const brightness = (r + g + b) / 3;
-      borderSampleCount++;
-      if(brightness < 90){
-        borderDarkCount++;
-      }
+      const brightness = (imageData[index] + imageData[index+1] + imageData[index+2]) / 3;
+      borderSampleCount++; if(brightness < 90) borderDarkCount++;
     }
   }
-
-  if(borderSampleCount < 200 || borderDarkCount / borderSampleCount < 0.45){
-    return null;
-  }
-
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  const normalizedX = (centerX / sampleWidth) * 2 - 1;
-  const normalizedY = -((centerY / sampleHeight) * 2 - 1);
+  if(borderSampleCount < 200 || borderDarkCount / borderSampleCount < 0.45) return null;
+  const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+  const normalizedX = (centerX / sampleWidth) * 2 - 1, normalizedY = -((centerY / sampleHeight) * 2 - 1);
   const view = new THREE.Vector3(normalizedX, normalizedY, 0.55).unproject(camera);
   const direction = view.sub(camera.position).normalize();
   const planeY = -1.15;
   const t = (planeY - camera.position.y) / direction.y;
-
-  if(!isFinite(t) || t <= 0){
-    return null;
-  }
-
+  if(!isFinite(t) || t <= 0) return null;
   const center = camera.position.clone().add(direction.multiplyScalar(t));
   const size = THREE.MathUtils.clamp((Math.max(width, height) / sampleWidth) * 2.6, 0.22, 1.4);
   const angle = ((centerX / sampleWidth) - 0.5) * 0.35;
-
   return { center, size, angle };
 }
 
 function placeModelOnMarker(marker){
-  if(!model || !marker){
-    setARStatus("Kein Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte.");
-    return;
-  }
-
+  if(!model || !marker){ setARStatus("Kein Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte."); return; }
   const existing = scene.getObjectByName("surfaceAnchoredModel");
   let anchoredModel = existing;
-
   if(!anchoredModel){
     anchoredModel = model.clone(true);
     anchoredModel.name = "surfaceAnchoredModel";
@@ -810,377 +242,125 @@ function placeModelOnMarker(marker){
     anchoredModel.position.set(0,0,0);
     anchoredModel.rotation.set(0,0,0);
     anchoredModel.scale.set(1,1,1);
-
     ensureVisibleMaterials(anchoredModel);
     centerObjectAtGround(anchoredModel);
     normalizeObjectSize(anchoredModel);
     centerObjectAtGround(anchoredModel);
     scene.add(anchoredModel);
   }
-
   const sliderScale = parseFloat(scaleInput.value || "1");
   anchoredModel.scale.setScalar(sliderScale * MARKER_SCALE_MULTIPLIER);
   anchoredModel.position.copy(marker.center);
   anchoredModel.position.y += 0.01;
   anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
-
   surfacePlaced = true;
   markerLocked = true;
   lastDetectedMarker = marker;
-  setARStatus("Marker erkannt. Das Modell ist jetzt 1000% größer auf der weißen Markerfläche fixiert.");
+  markerGuideGroup.visible = false;
+  setARStatus("Marker erkannt. Das Modell ist jetzt fest auf der weißen Markerfläche verankert.");
 }
 
-function rebuildMixedModel(){
-  if(!model || surfacePlaced){
-    return;
-  }
+function rebuildMixedModel(){ if(!model || surfacePlaced) return; const existing = scene.getObjectByName("mixedModelRoot"); if(existing) scene.remove(existing); const mixedModel = model.clone(true); mixedModel.name = "mixedModelRoot"; mixedModel.visible = true; mixedModel.position.set(0, -0.4, -1.8); mixedModel.rotation.set(0, 0, 0); mixedModel.scale.set(1, 1, 1); ensureVisibleMaterials(mixedModel); centerObjectAtGround(mixedModel); normalizeObjectSize(mixedModel); centerObjectAtGround(mixedModel); const sliderScale = parseFloat(scaleInput.value || "1"); mixedModel.scale.multiplyScalar(sliderScale); mixedModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0); scene.add(mixedModel); }
+function showScreenModel(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } mixedModeActive = false; markerTrackingActive = false; rebuildScreenModel(true); }
+async function showMixedView(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } const ok = await startCameraFeed(); if(!ok) return; mixedModeActive = true; markerTrackingActive = false; overlay.classList.remove("active"); if(!surfacePlaced) rebuildMixedModel(); hideMarkerVisual(); setARStatus("Kamerabild mit 3D-Modell aktiv"); }
+async function startSurfaceAnchorMode(){ if(!model){ alert("Bitte zuerst ein 3D-Modell laden."); return; } const ok = await startCameraFeed(); if(!ok) return; mixedModeActive = false; markerTrackingActive = true; markerLocked = false; markerLostFrames = 0; stableMarkerFrames = 0; lastDetectedMarker = null; overlay.classList.remove("active"); clearPlacedSurfaceModel(); const existingMixed = scene.getObjectByName("mixedModelRoot"); if(existingMixed) scene.remove(existingMixed); setARStatus("Halte den Marker mit schwarzem Rand und weißer Mitte flach auf den Boden. Das Modell wird nach stabiler Erkennung auf der weißen Fläche verankert."); }
+function hideScreenModel(){ overlay.classList.remove("active"); }
+function closePhotoPreview(){ photoPreviewOverlay.classList.remove("active"); }
+function buildPhotoFilename(){ return `ar-foto-${new Date().toISOString().replace(/[:.]/g, "-")}.png`; }
+function openPhotoPreview(dataURL, blob){ latestPhotoDataURL = dataURL; latestPhotoBlob = blob; photoPreviewImage.src = dataURL; photoPreviewOverlay.classList.add("active"); }
+function canvasToBlob(canvas){ return new Promise(resolve => canvas.toBlob(blob => resolve(blob), "image/png")); }
+function downloadBlob(blob, filename){ const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000); }
 
-  const existing = scene.getObjectByName("mixedModelRoot");
-  if(existing){
-    scene.remove(existing);
-  }
-
-  const mixedModel = model.clone(true);
-  mixedModel.name = "mixedModelRoot";
-  mixedModel.visible = true;
-  mixedModel.position.set(0, -0.4, -1.8);
-  mixedModel.rotation.set(0, 0, 0);
-  mixedModel.scale.set(1, 1, 1);
-
-  ensureVisibleMaterials(mixedModel);
-  centerObjectAtGround(mixedModel);
-  normalizeObjectSize(mixedModel);
-  centerObjectAtGround(mixedModel);
-
-  const sliderScale = parseFloat(scaleInput.value || "1");
-  mixedModel.scale.multiplyScalar(sliderScale);
-  mixedModel.rotation.y = THREE.MathUtils.degToRad(rotationInput.value || 0);
-
-  scene.add(mixedModel);
-}
-
-function showScreenModel(){
-  if(!model){
-    alert("Bitte zuerst ein 3D-Modell laden.");
-    return;
-  }
-
-  mixedModeActive = false;
-  markerTrackingActive = false;
-  rebuildScreenModel(true);
-}
-
-async function showMixedView(){
-  if(!model){
-    alert("Bitte zuerst ein 3D-Modell laden.");
-    return;
-  }
-
-  const ok = await startCameraFeed();
-  if(!ok){
-    return;
-  }
-
-  mixedModeActive = true;
-  markerTrackingActive = false;
-  overlay.classList.remove("active");
-  if(!surfacePlaced){
-    rebuildMixedModel();
-  }
-  hideMarkerVisual();
-  setARStatus("Kamerabild mit 3D-Modell aktiv");
-}
-
-async function startSurfaceAnchorMode(){
-  if(!model){
-    alert("Bitte zuerst ein 3D-Modell laden.");
-    return;
-  }
-
-  const ok = await startCameraFeed();
-  if(!ok){
-    return;
-  }
-
-  mixedModeActive = false;
-  markerTrackingActive = true;
-  markerLocked = false;
-  markerLostFrames = 0;
-  stableMarkerFrames = 0;
-  lastDetectedMarker = null;
-  overlay.classList.remove("active");
-  clearPlacedSurfaceModel();
-
-  const existingMixed = scene.getObjectByName("mixedModelRoot");
-  if(existingMixed){
-    scene.remove(existingMixed);
-  }
-
-  setARStatus("Halte den Marker mit schwarzem Rand und weißer Mitte flach auf den Boden. Das Modell wird nach stabiler Erkennung auf der weißen Fläche verankert.");
-}
-
-function hideScreenModel(){
-  overlay.classList.remove("active");
-}
-
-function closePhotoPreview(){
-  photoPreviewOverlay.classList.remove("active");
-}
-
-function downloadDataURL(dataURL, filename){
-  const link = document.createElement("a");
-  link.href = dataURL;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
-function buildPhotoFilename(){
-  const now = new Date();
-  const stamp = now.toISOString().replace(/[:.]/g, "-");
-  return `ar-foto-${stamp}.png`;
-}
-
-function openPhotoPreview(dataURL){
-  latestPhotoDataURL = dataURL;
-  photoPreviewImage.src = dataURL;
-  photoPreviewOverlay.classList.add("active");
-}
-
-function capturePhoto(){
+async function capturePhoto(){
   const isViewerOpen = overlay.classList.contains("active");
-
   if(isViewerOpen){
     updateViewerSize();
     const dataURL = viewerRenderer.domElement.toDataURL("image/png");
-    openPhotoPreview(dataURL);
+    const blob = await canvasToBlob(viewerRenderer.domElement);
+    openPhotoPreview(dataURL, blob);
     return;
   }
-
-  if(!mixedModeActive && !surfacePlaced && !markerTrackingActive){
-    alert("Starte zuerst 'Kamera + 3D', 'Auf Marker platzieren' oder öffne die 3D Ansicht.");
-    return;
-  }
-
-  const width = Math.max(1, window.innerWidth);
-  const height = Math.max(1, window.innerHeight);
+  if(!mixedModeActive && !surfacePlaced && !markerTrackingActive){ alert("Starte zuerst 'Kamera + 3D', 'Auf Marker platzieren' oder öffne die 3D Ansicht."); return; }
+  const width = Math.max(1, window.innerWidth), height = Math.max(1, window.innerHeight);
   const photoCanvas = document.createElement("canvas");
-  photoCanvas.width = width;
-  photoCanvas.height = height;
+  photoCanvas.width = width; photoCanvas.height = height;
   const ctx = photoCanvas.getContext("2d");
-
   try{
-    if(cameraFeed.readyState >= 2 && cameraFeed.videoWidth > 0 && cameraFeed.videoHeight > 0){
-      ctx.drawImage(cameraFeed, 0, 0, width, height);
-    }else{
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, width, height);
-    }
-
+    if(cameraFeed.readyState >= 2 && cameraFeed.videoWidth > 0 && cameraFeed.videoHeight > 0) ctx.drawImage(cameraFeed, 0, 0, width, height);
+    else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, width, height); }
     ctx.drawImage(renderer.domElement, 0, 0, width, height);
-
     const dataURL = photoCanvas.toDataURL("image/png");
-    openPhotoPreview(dataURL);
-  }catch(error){
-    console.error("Foto konnte nicht erstellt werden", error);
-    alert("Das Foto konnte nicht erstellt werden.");
-  }
+    const blob = await canvasToBlob(photoCanvas);
+    openPhotoPreview(dataURL, blob);
+  }catch(error){ console.error(error); alert("Das Foto konnte nicht erstellt werden."); }
 }
 
 function savePreviewPhoto(){
-  if(!latestPhotoDataURL){
-    alert("Es ist noch kein Foto zur Vorschau vorhanden.");
-    return;
+  if(!latestPhotoBlob && !latestPhotoDataURL){ alert("Es ist noch kein Foto zur Vorschau vorhanden."); return; }
+  const filename = buildPhotoFilename();
+  if(latestPhotoBlob){
+    downloadBlob(latestPhotoBlob, filename);
+  }else{
+    const link = document.createElement("a");
+    link.href = latestPhotoDataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
-
-  downloadDataURL(latestPhotoDataURL, buildPhotoFilename());
   showPhotoStatus("Foto in Downloads gesichert");
 }
 
 screenViewBtn.addEventListener("click", showScreenModel);
 mixedViewBtn.addEventListener("click", showMixedView);
 surfaceAnchorBtn.addEventListener("click", startSurfaceAnchorMode);
-photoBtnFloating.addEventListener("click", capturePhoto);
+photoBtnFloating.addEventListener("click", ()=>{ capturePhoto(); });
 savePhotoBtn.addEventListener("click", savePreviewPhoto);
 closePhotoPreviewBtn.addEventListener("click", closePhotoPreview);
 closeViewerBtn.addEventListener("click", hideScreenModel);
-overlay.addEventListener("click", e=>{
-  if(e.target === overlay){
-    hideScreenModel();
-  }
-});
-photoPreviewOverlay.addEventListener("click", e=>{
-  if(e.target === photoPreviewOverlay){
-    closePhotoPreview();
-  }
-});
+overlay.addEventListener("click", e=>{ if(e.target === overlay) hideScreenModel(); });
+photoPreviewOverlay.addEventListener("click", e=>{ if(e.target === photoPreviewOverlay) closePhotoPreview(); });
 
 document.getElementById("fileInput").addEventListener("change", e=>{
-  const file = e.target.files[0];
-  if(!file) return;
-
-  setStatus(`Lade ${file.name} …`);
-  overlay.classList.add("active");
-  setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder nutze den Marker mit schwarzem Rand.");
-
-  if(currentObjectURL){
-    URL.revokeObjectURL(currentObjectURL);
-  }
-
-  const url = URL.createObjectURL(file);
-  currentObjectURL = url;
-
-  loader.load(
-    url,
-    gltf=>{
-      if(model){
-        scene.remove(model);
-      }
-
-      clearPlacedSurfaceModel();
-      hideMarkerVisual();
-
-      const oldMixed = scene.getObjectByName("mixedModelRoot");
-      if(oldMixed){
-        scene.remove(oldMixed);
-      }
-
-      model = gltf.scene;
-      model.visible = false;
-      scene.add(model);
-
-      rebuildScreenModel(true);
-      if(mixedModeActive){
-        rebuildMixedModel();
-      }
-    },
-    undefined,
-    error=>{
-      console.error("Fehler beim Laden des 3D-Modells", error);
-      setStatus("Fehler beim Laden des Modells");
-      setARStatus("Modell konnte nicht geladen werden.");
-      alert("Das 3D-Modell konnte nicht geladen werden.");
-    }
-  );
+  const file = e.target.files[0]; if(!file) return;
+  setStatus(`Lade ${file.name} …`); overlay.classList.add("active"); setARStatus("Modell geladen. Wähle jetzt eine Ansicht oder nutze den Marker mit schwarzem Rand.");
+  if(currentObjectURL) URL.revokeObjectURL(currentObjectURL);
+  const url = URL.createObjectURL(file); currentObjectURL = url;
+  loader.load(url, gltf=>{
+    if(model) scene.remove(model);
+    clearPlacedSurfaceModel(); hideMarkerVisual();
+    const oldMixed = scene.getObjectByName("mixedModelRoot"); if(oldMixed) scene.remove(oldMixed);
+    model = gltf.scene; model.visible = false; scene.add(model);
+    rebuildScreenModel(true); if(mixedModeActive) rebuildMixedModel();
+  }, undefined, error=>{ console.error(error); setStatus("Fehler beim Laden des Modells"); setARStatus("Modell konnte nicht geladen werden."); alert("Das 3D-Modell konnte nicht geladen werden."); });
 });
 
-scaleInput.addEventListener("input", e=>{
-  if(!model) return;
-
-  const s = parseFloat(e.target.value);
-  model.scale.set(s, s, s);
-
-  if(screenModel){
-    rebuildScreenModel(overlay.classList.contains("active"));
-  }
-
-  if(mixedModeActive){
-    rebuildMixedModel();
-  }
-
-  if(surfacePlaced && lastDetectedMarker){
-    placeModelOnMarker(lastDetectedMarker);
-  }
-});
-
-rotationInput.addEventListener("input", e=>{
-  if(!model) return;
-
-  model.rotation.y = THREE.MathUtils.degToRad(e.target.value);
-  syncScreenModelTransform();
-
-  if(mixedModeActive){
-    rebuildMixedModel();
-  }
-
-  if(surfacePlaced && lastDetectedMarker){
-    placeModelOnMarker(lastDetectedMarker);
-  }
-});
-
-document.getElementById("resetBtn").addEventListener("click", ()=>{
-  if(!model) return;
-
-  model.position.set(0,0,0);
-  model.rotation.set(0,0,0);
-  model.scale.set(1,1,1);
-
-  scaleInput.value = 1;
-  rotationInput.value = 0;
-
-  clearPlacedSurfaceModel();
-  hideMarkerVisual();
-  markerTrackingActive = false;
-  markerLocked = false;
-  lastDetectedMarker = null;
-  stableMarkerFrames = 0;
-
-  if(screenModel){
-    rebuildScreenModel(overlay.classList.contains("active"));
-  }
-
-  if(mixedModeActive){
-    rebuildMixedModel();
-  }
-
-  setARStatus("Zurückgesetzt. Du kannst die Marker-Platzierung neu starten.");
-});
+scaleInput.addEventListener("input", e=>{ if(!model) return; const s = parseFloat(e.target.value); model.scale.set(s,s,s); if(screenModel) rebuildScreenModel(overlay.classList.contains("active")); if(mixedModeActive) rebuildMixedModel(); if(surfacePlaced && lastDetectedMarker) placeModelOnMarker(lastDetectedMarker); });
+rotationInput.addEventListener("input", e=>{ if(!model) return; model.rotation.y = THREE.MathUtils.degToRad(e.target.value); syncScreenModelTransform(); if(mixedModeActive) rebuildMixedModel(); if(surfacePlaced && lastDetectedMarker) placeModelOnMarker(lastDetectedMarker); });
+document.getElementById("resetBtn").addEventListener("click", ()=>{ if(!model) return; model.position.set(0,0,0); model.rotation.set(0,0,0); model.scale.set(1,1,1); scaleInput.value = 1; rotationInput.value = 0; clearPlacedSurfaceModel(); hideMarkerVisual(); markerTrackingActive = false; markerLocked = false; lastDetectedMarker = null; stableMarkerFrames = 0; if(screenModel) rebuildScreenModel(overlay.classList.contains("active")); if(mixedModeActive) rebuildMixedModel(); setARStatus("Zurückgesetzt. Du kannst die Marker-Platzierung neu starten."); });
 
 function renderMarkerTracking(){
   if(markerTrackingActive && !markerLocked){
     const detectedMarker = estimateMarkerFromFrame();
-
     if(detectedMarker){
-      markerLostFrames = 0;
-      stableMarkerFrames++;
-      lastDetectedMarker = detectedMarker;
-      updateMarkerVisual(detectedMarker);
-
-      if(stableMarkerFrames >= MARKER_STABLE_FRAMES){
-        setARStatus("Marker stabil erkannt. Modell wird jetzt auf der weißen Fläche fixiert.");
-        placeModelOnMarker(detectedMarker);
-      }else{
-        setARStatus(`Marker erkannt. Halte ruhig … ${stableMarkerFrames}/${MARKER_STABLE_FRAMES}`);
-      }
+      markerLostFrames = 0; stableMarkerFrames++; lastDetectedMarker = detectedMarker; updateMarkerVisual(detectedMarker);
+      if(stableMarkerFrames >= MARKER_STABLE_FRAMES){ setARStatus("Marker stabil erkannt. Modell wird jetzt auf der weißen Fläche fixiert."); placeModelOnMarker(detectedMarker); }
+      else setARStatus(`Marker erkannt. Halte ruhig … ${stableMarkerFrames}/${MARKER_STABLE_FRAMES}`);
     }else{
-      markerLostFrames++;
-      stableMarkerFrames = 0;
-      if(markerLostFrames > MARKER_LOST_LIMIT){
-        hideMarkerVisual();
-        setARStatus("Kein passender Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte.");
-      }
+      markerLostFrames++; stableMarkerFrames = 0;
+      if(markerLostFrames > MARKER_LOST_LIMIT){ hideMarkerVisual(); setARStatus("Kein passender Marker erkannt. Nutze ein Quadrat mit schwarzem Rand und weißer Mitte."); }
     }
   }
-
   renderer.render(scene, camera);
 }
-
-function animateViewer(){
-  requestAnimationFrame(animateViewer);
-  controls.update();
-  viewerRenderer.render(viewerScene, viewerCamera);
-}
+function animateViewer(){ requestAnimationFrame(animateViewer); controls.update(); viewerRenderer.render(viewerScene, viewerCamera); }
 animateViewer();
-
-function animateScene(){
-  requestAnimationFrame(animateScene);
-  renderMarkerTracking();
-}
+function animateScene(){ requestAnimationFrame(animateScene); renderMarkerTracking(); }
 animateScene();
-
-window.addEventListener("resize", ()=>{
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  updateViewerSize();
-});
-
+window.addEventListener("resize", ()=>{ camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); updateViewerSize(); });
 updateViewerSize();
 setStatus("Warte auf Modell …");
 setARStatus("Lade ein Modell und halte dann einen Marker mit schwarzem Rand und weißer Mitte auf den Boden.");
-
 </script>
-
 </body>
 </html>

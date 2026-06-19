@@ -820,7 +820,7 @@ function placeModelOnMarker(marker){
   }
 
   const sliderScale = parseFloat(scaleInput.value || "1");
-  anchoredModel.scale.setScalar(baseModelScale * sliderScale);
+  anchoredModel.scale.setScalar(sliderScale);
   anchoredModel.position.copy(marker.center);
   anchoredModel.position.y += 0.01;
   anchoredModel.rotation.set(0, THREE.MathUtils.degToRad(rotationInput.value || 0) + (marker.angle || 0), 0);
